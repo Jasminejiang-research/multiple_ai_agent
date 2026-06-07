@@ -217,28 +217,126 @@ def save_proposal_markdown(proposal: BusinessProposal, output_dir: Path | None =
     return output_path
 
 
-def run_proposal_pipeline(user_idea: str) -> tuple[BusinessProposal, Path]:
+def run_proposal_pipeline(user_idea: str) -> tuple[BusinessProposal, Path, str]:
     """End-to-end: generate structured proposal and persist Markdown report."""
     client = create_client()
     proposal = generate_proposal(client, user_idea)
+    markdown = proposal_to_markdown(proposal)
     output_path = save_proposal_markdown(proposal)
-    return proposal, output_path
+    return proposal, output_path, markdown
+
+
+def build_user_idea(
+    company_name: str,
+    industry: str,
+    target_customer: str,
+    problem: str,
+    solution: str,
+    business_model: str,
+    geography: str,
+    proposal_goal: str,
+) -> str:
+    """Format sidebar form inputs into a structured prompt for the LLM engine."""
+    return f"""
+Company Name: {company_name}
+Industry: {industry}
+Target Customer: {target_customer}
+Problem: {problem}
+Solution: {solution}
+Business Model: {business_model}
+Geography: {geography}
+Proposal Goal: {proposal_goal}
+""".strip()
+
+
+def run_streamlit_app() -> None:
+    import streamlit as st
+
+    st.set_page_config(
+        page_title="Open Proposal Agent",
+        page_icon="📋",
+        layout="wide",
+    )
+
+    st.title("Open Proposal Agent")
+    st.caption("Phase 1 · Single-Agent Baseline · Investor-Grade Business Proposals")
+
+    with st.sidebar:
+        st.header("Business Idea Input")
+        company_name = st.text_input("Company Name", placeholder="e.g. MediQuick AI")
+        industry = st.text_input("Industry", placeholder="e.g. Healthcare IT")
+        target_customer = st.text_input(
+            "Target Customer", placeholder="e.g. General Practitioners in urban areas"
+        )
+        problem = st.text_area(
+            "Problem",
+            placeholder="Describe the core pain point your customers face.",
+            height=100,
+        )
+        solution = st.text_area(
+            "Solution",
+            placeholder="Describe your product or service and how it solves the problem.",
+            height=100,
+        )
+        business_model = st.text_input(
+            "Business Model", placeholder="e.g. SaaS (Monthly subscription per doctor)"
+        )
+        geography = st.text_input("Geography", placeholder="e.g. United States")
+        proposal_goal = st.text_input(
+            "Proposal Goal",
+            placeholder="e.g. Seed funding pitch, accelerator application, internal validation",
+        )
+        generate_clicked = st.button("Generate Proposal", type="primary", use_container_width=True)
+
+    if generate_clicked:
+        required_fields = {
+            "Company Name": company_name,
+            "Industry": industry,
+            "Target Customer": target_customer,
+            "Problem": problem,
+            "Solution": solution,
+            "Business Model": business_model,
+            "Geography": geography,
+            "Proposal Goal": proposal_goal,
+        }
+        missing = [label for label, value in required_fields.items() if not value.strip()]
+        if missing:
+            st.error(f"Please fill in all fields. Missing: {', '.join(missing)}")
+        else:
+            user_idea = build_user_idea(
+                company_name=company_name.strip(),
+                industry=industry.strip(),
+                target_customer=target_customer.strip(),
+                problem=problem.strip(),
+                solution=solution.strip(),
+                business_model=business_model.strip(),
+                geography=geography.strip(),
+                proposal_goal=proposal_goal.strip(),
+            )
+            try:
+                with st.spinner("Generating investor-grade proposal… This may take 20–40 seconds."):
+                    proposal, output_path, markdown = run_proposal_pipeline(user_idea)
+                st.session_state["proposal"] = proposal
+                st.session_state["markdown"] = markdown
+                st.session_state["output_path"] = str(output_path)
+                st.session_state["download_name"] = output_path.name
+            except Exception as exc:
+                st.error(f"Generation failed: {exc}")
+
+    if "markdown" in st.session_state:
+        st.success(f"Report saved to `{st.session_state['output_path']}`")
+        st.download_button(
+            label="Download Markdown",
+            data=st.session_state["markdown"],
+            file_name=st.session_state.get("download_name", "business_proposal.md"),
+            mime="text/markdown",
+            type="primary",
+        )
+        st.divider()
+        st.markdown(st.session_state["markdown"])
+    else:
+        st.info("Fill in the sidebar form and click **Generate Proposal** to get started.")
 
 
 if __name__ == "__main__":
-    test_idea = """
-Company Name: MediQuick AI
-Industry: Healthcare IT
-Target Customer: General Practitioners in urban areas
-Problem: Doctors spend 3+ hours daily on administrative paperwork instead of patient care.
-Solution: An AI-powered voice assistant that listens to doctor-patient consultations and automatically drafts compliant electronic health records (EHR).
-Business Model: SaaS (Monthly subscription per doctor)
-Geography: United States
-""".strip()
-
-    print("Generating investor-grade business proposal via Gemini...\n")
-    proposal, report_path = run_proposal_pipeline(test_idea)
-
-    print("=== Parsed BusinessProposal (Pydantic) ===")
-    print(proposal.model_dump_json(indent=2))
-    print(f"\nMarkdown report saved to: {report_path}")
+    run_streamlit_app()
