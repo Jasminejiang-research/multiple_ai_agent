@@ -430,12 +430,12 @@
 
 #### 5.1 Install and Prepare LangGraph
 
-- [ ] 添加 `langgraph` 依赖。
-- [ ] 创建 `workflows/` 目录。
-- [ ] 创建 `workflows/proposal_graph.py`。
-- [ ] 创建 `schemas/workflow.py`。
-- [ ] 定义 `WorkflowState`。
-- [ ] 写最小 import test。
+- [x] 添加 `langgraph` 依赖。
+- [x] 创建 `workflows/` 目录。
+- [x] 创建 `workflows/proposal_graph.py`。
+- [x] 创建 `schemas/workflow.py`。
+- [x] 定义 `WorkflowState`。
+- [x] 写最小 import test。
 - [ ] 提交 commit：`chore: add langgraph workflow foundation`。
 
 #### 5.2 InputValidator Node
