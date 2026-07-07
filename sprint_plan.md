@@ -440,13 +440,13 @@
 
 #### 5.2 InputValidator Node
 
-- [ ] 写 `input_validator_node(state)`。
-- [ ] 检查 required fields。
-- [ ] 检查文本长度。
-- [ ] 返回 missing info list。
-- [ ] 不调用 LLM。
-- [ ] 写单元测试：完整输入通过。
-- [ ] 写单元测试：缺字段返回 missing info。
+- [x] 写 `input_validator_node(state)`。
+- [x] 检查 required fields。
+- [x] 检查文本长度。
+- [x] 返回 missing info list。
+- [x] 不调用 LLM。
+- [x] 写单元测试：完整输入通过。
+- [x] 写单元测试：缺字段返回 missing info。
 - [ ] 提交 commit：`feat: add input validator node`。
 
 #### 5.3 ProposalPlanner Node
