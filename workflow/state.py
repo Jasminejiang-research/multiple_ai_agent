@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
+from typing import Any, NotRequired, TypedDict
 
-if TYPE_CHECKING:
-    from schemas.proposal_schema import BusinessProposal
+from schemas.proposal_schema import BusinessProposal
 
 
 class WorkflowState(TypedDict):

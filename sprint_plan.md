@@ -592,7 +592,7 @@
 - [x] 不做 critique。
 - [x] 不新增工具调用。
 - [x] 写 mock test。
-- [ ] 提交 commit：`feat: add section writer node`。
+- [x] 提交 commit：`feat: add section writer node`。
 
 
 
@@ -618,7 +618,7 @@
 - [x] 检查证据缺口。
 - [x] 检查财务假设不清楚处。
 - [x] 写 mock test。
-- [ ] 提交 commit：`feat: add basic critic node`。
+- [x] 提交 commit：`feat: add basic critic node`。
 
 
 
@@ -636,17 +636,17 @@
 
 ##### 5.8 Graph Assembly
 
-- [ ] 在 `proposal_graph.py` 中定义 graph。
-- [ ] 添加节点：validator。
-- [ ] 添加节点：planner。
-- [ ] 添加节点：section_writer。
-- [ ] 添加节点：assembler。
-- [ ] 添加节点：critic。
-- [ ] 添加节点：revision。
-- [ ] 添加节点：exporter。
-- [ ] 设置正常边。
-- [ ] 设置 missing info 分支。
-- [ ] 写端到端 mock test。
+- [x] 在 `proposal_graph.py` 中定义 graph。
+- [x] 添加节点：validator。
+- [x] 添加节点：planner。
+- [x] 添加节点：section_writer。
+- [x] 添加节点：assembler。
+- [x] 添加节点：critic。
+- [x] 添加节点：revision。
+- [x] 添加节点：exporter。
+- [x] 设置正常边。
+- [x] 设置 missing info 分支。
+- [x] 写端到端 mock test。
 - [ ] 提交 commit：`feat: assemble proposal workflow graph`。
 
 
