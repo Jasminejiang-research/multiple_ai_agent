@@ -2,7 +2,8 @@
 
 Phase 2 (Sprint 5) replaces the single monolithic prompt with discrete,
 independently testable nodes. This module currently implements the
-``InputValidator`` node (Sprint 5.2) and ``ProposalPlanner`` node (Sprint 5.3).
+``InputValidator`` node (Sprint 5.2), ``ProposalPlanner`` node (Sprint 5.3),
+and ``SectionWriter`` node (Sprint 5.4).
 
 Per ``architecture_design.md`` (section 6.2), ``InputValidator`` takes the
 ``UserBrief`` and produces a ``MissingInfoReport`` *without* calling the LLM.
@@ -19,11 +20,12 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from schemas.workflow import PROPOSAL_SECTION_TITLES, ProposalOutline
+from schemas.workflow import PROPOSAL_SECTION_TITLES, ProposalOutline, SectionDrafts
 from workflow.state import WorkflowState
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 PLANNER_PROMPT_PATH = ROOT_DIR / "prompts" / "planner.md"
+SECTION_WRITER_PROMPT_PATH = ROOT_DIR / "prompts" / "section_writer.md"
 
 
 class PlannerLLM(Protocol):
@@ -35,6 +37,14 @@ class PlannerLLM(Protocol):
 
     def generate_json(self, prompt: str) -> str:
         """Generate a JSON response for the provided prompt."""
+
+
+class SectionWriterLLM(Protocol):
+    """Minimal LLM interface used by ``section_writer_node``."""
+
+    def generate_json(self, prompt: str) -> str:
+        """Generate a JSON response for the provided prompt."""
+
 
 # Required brief fields, mirroring the ``UserBrief`` schema in
 # architecture_design.md (section 8.2). ``stage``, ``known_competitors`` and
@@ -191,4 +201,97 @@ def proposal_planner_node(
     return {
         "proposal_outline": proposal_outline.model_dump(),
         "current_step": "proposal_planner",
+    }
+
+
+def load_section_writer_prompt() -> str:
+    """Load the SectionWriter prompt template from disk."""
+    if not SECTION_WRITER_PROMPT_PATH.is_file():
+        raise FileNotFoundError(
+            f"SectionWriter prompt not found: {SECTION_WRITER_PROMPT_PATH}"
+        )
+    return SECTION_WRITER_PROMPT_PATH.read_text(encoding="utf-8")
+
+
+def build_section_writer_prompt(
+    user_brief: dict[str, Any],
+    proposal_outline: dict[str, Any],
+) -> str:
+    """Build the complete prompt sent to the SectionWriter LLM call.
+
+    Args:
+        user_brief: Validated user brief from the workflow state.
+        proposal_outline: Planner output already validated as ``ProposalOutline``.
+
+    Returns:
+        Prompt text containing writer instructions plus serialized inputs.
+    """
+    brief_json = json.dumps(user_brief, ensure_ascii=False, indent=2)
+    outline_json = json.dumps(proposal_outline, ensure_ascii=False, indent=2)
+    section_titles = "\n".join(f"- {title}" for title in PROPOSAL_SECTION_TITLES)
+
+    return (
+        f"{load_section_writer_prompt()}\n\n"
+        "# Required Section Titles\n\n"
+        f"{section_titles}\n\n"
+        "# User Brief JSON\n\n"
+        f"```json\n{brief_json}\n```\n\n"
+        "# Proposal Outline JSON\n\n"
+        f"```json\n{outline_json}\n```"
+    )
+
+
+def parse_section_drafts(raw_output: str) -> SectionDrafts:
+    """Parse and validate the raw LLM JSON output as ``SectionDrafts``.
+
+    Args:
+        raw_output: JSON string returned by the SectionWriter LLM.
+
+    Returns:
+        A validated ``SectionDrafts`` instance.
+
+    Raises:
+        ValueError: If the output is not valid JSON or fails Pydantic validation.
+    """
+    try:
+        return SectionDrafts.model_validate_json(raw_output)
+    except (ValueError, ValidationError) as exc:
+        raise ValueError(f"Invalid SectionDrafts output: {exc}") from exc
+
+
+def section_writer_node(
+    state: WorkflowState,
+    llm_client: SectionWriterLLM | None = None,
+) -> WorkflowState:
+    """Call the LLM writer and save validated section drafts to state.
+
+    This node writes the 13 fixed proposal sections from the planner outline.
+    It does not critique, revise, assemble, or call any tools.
+
+    Args:
+        state: Current workflow state. Expected to contain ``user_brief`` and
+            ``proposal_outline``.
+        llm_client: Optional test or production LLM adapter implementing
+            ``generate_json(prompt: str) -> str``.
+
+    Returns:
+        A partial state update with ``section_drafts`` and ``current_step``.
+    """
+    if llm_client is None:
+        from workflow.llm import create_default_section_writer_llm
+
+        llm_client = create_default_section_writer_llm()
+
+    user_brief = state.get("user_brief") or {}
+    proposal_outline = state.get("proposal_outline")
+    if proposal_outline is None:
+        raise ValueError("section_writer_node requires proposal_outline in state.")
+
+    prompt = build_section_writer_prompt(user_brief, proposal_outline)
+    raw_output = llm_client.generate_json(prompt)
+    section_drafts = parse_section_drafts(raw_output)
+
+    return {
+        "section_drafts": section_drafts.model_dump(),
+        "current_step": "section_writer",
     }
