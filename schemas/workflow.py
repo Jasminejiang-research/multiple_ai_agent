@@ -398,3 +398,32 @@ class CritiqueReport(BaseModel):
             description="Blocking issues that must be resolved before export.",
         ),
     ]
+
+
+class RevisedProposal(BaseModel):
+    """Structured output from the RevisionNode after critique-driven edits.
+
+    The revised proposal keeps the same fixed 13-section shape as
+    ``ProposalDraft`` and records which critique items were applied so the
+    workflow can audit the Generate -> Critique -> Revise loop.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    proposal: ProposalDraft
+    applied_critique_summary: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            max_length=20,
+            description="Brief notes describing critique-driven changes made.",
+        ),
+    ]
+    unresolved_issues: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            max_length=20,
+            description="Critique items that could not be resolved without new evidence.",
+        ),
+    ]

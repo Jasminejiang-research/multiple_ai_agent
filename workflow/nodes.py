@@ -4,7 +4,8 @@ Phase 2 (Sprint 5) replaces the single monolithic prompt with discrete,
 independently testable nodes. This module currently implements the
 ``InputValidator`` node (Sprint 5.2), ``ProposalPlanner`` node (Sprint 5.3),
 ``SectionWriter`` node (Sprint 5.4), and ``ProposalAssembler`` node
-(Sprint 5.5).
+(Sprint 5.5), ``BasicCritic`` node (Sprint 5.6), and ``Revision`` node
+(Sprint 5.7).
 
 Per ``architecture_design.md`` (section 6.2), ``InputValidator`` takes the
 ``UserBrief`` and produces a ``MissingInfoReport`` *without* calling the LLM.
@@ -28,6 +29,7 @@ from schemas.workflow import (
     ProposalDraft,
     ProposalOutline,
     ProposalSection,
+    RevisedProposal,
     SectionDrafts,
 )
 from workflow.state import WorkflowState
@@ -36,6 +38,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 PLANNER_PROMPT_PATH = ROOT_DIR / "prompts" / "planner.md"
 SECTION_WRITER_PROMPT_PATH = ROOT_DIR / "prompts" / "section_writer.md"
 BASIC_CRITIC_PROMPT_PATH = ROOT_DIR / "prompts" / "basic_critic.md"
+REVISION_PROMPT_PATH = ROOT_DIR / "prompts" / "revision.md"
 
 
 class PlannerLLM(Protocol):
@@ -58,6 +61,13 @@ class SectionWriterLLM(Protocol):
 
 class BasicCriticLLM(Protocol):
     """Minimal LLM interface used by ``basic_critic_node``."""
+
+    def generate_json(self, prompt: str) -> str:
+        """Generate a JSON response for the provided prompt."""
+
+
+class RevisionLLM(Protocol):
+    """Minimal LLM interface used by ``revision_node``."""
 
     def generate_json(self, prompt: str) -> str:
         """Generate a JSON response for the provided prompt."""
@@ -503,4 +513,97 @@ def basic_critic_node(
     return {
         "critique_report": critique_report.model_dump(),
         "current_step": "basic_critic",
+    }
+
+
+def load_revision_prompt() -> str:
+    """Load the RevisionNode prompt template from disk."""
+    if not REVISION_PROMPT_PATH.is_file():
+        raise FileNotFoundError(f"Revision prompt not found: {REVISION_PROMPT_PATH}")
+    return REVISION_PROMPT_PATH.read_text(encoding="utf-8")
+
+
+def build_revision_prompt(
+    proposal_draft: dict[str, Any],
+    critique_report: dict[str, Any],
+) -> str:
+    """Build the complete prompt sent to the RevisionNode LLM call.
+
+    Args:
+        proposal_draft: Assembled draft already validated as ``ProposalDraft``.
+        critique_report: Critique already validated as ``CritiqueReport``.
+
+    Returns:
+        Prompt text containing revision instructions plus serialized inputs.
+    """
+    draft_json = json.dumps(proposal_draft, ensure_ascii=False, indent=2)
+    critique_json = json.dumps(critique_report, ensure_ascii=False, indent=2)
+
+    return (
+        f"{load_revision_prompt()}\n\n"
+        "# Proposal Draft JSON\n\n"
+        f"```json\n{draft_json}\n```\n\n"
+        "# Critique Report JSON\n\n"
+        f"```json\n{critique_json}\n```"
+    )
+
+
+def parse_revised_proposal(raw_output: str) -> RevisedProposal:
+    """Parse and validate the raw LLM JSON output as ``RevisedProposal``.
+
+    Args:
+        raw_output: JSON string returned by the RevisionNode LLM.
+
+    Returns:
+        A validated ``RevisedProposal`` instance.
+
+    Raises:
+        ValueError: If the output is not valid JSON or fails Pydantic validation.
+    """
+    try:
+        return RevisedProposal.model_validate_json(raw_output)
+    except (ValueError, ValidationError) as exc:
+        raise ValueError(f"Invalid RevisedProposal output: {exc}") from exc
+
+
+def revision_node(
+    state: WorkflowState,
+    llm_client: RevisionLLM | None = None,
+) -> WorkflowState:
+    """Revise the assembled proposal using only the critique report.
+
+    This node implements the Generate -> Critique -> Revise loop from
+    ``architecture_design.md``. It receives the assembled draft and critique,
+    asks the LLM for a schema-validated revised proposal, and does not call
+    tools or introduce new evidence.
+
+    Args:
+        state: Current workflow state. Expected to contain ``proposal_draft``
+            and ``critique_report``.
+        llm_client: Optional test or production LLM adapter implementing
+            ``generate_json(prompt: str) -> str``.
+
+    Returns:
+        A partial state update with ``revised_proposal`` and ``current_step``.
+    """
+    if llm_client is None:
+        from workflow.llm import create_default_revision_llm
+
+        llm_client = create_default_revision_llm()
+
+    proposal_draft = state.get("proposal_draft")
+    if proposal_draft is None:
+        raise ValueError("revision_node requires proposal_draft in state.")
+
+    critique_report = state.get("critique_report")
+    if critique_report is None:
+        raise ValueError("revision_node requires critique_report in state.")
+
+    prompt = build_revision_prompt(proposal_draft, critique_report)
+    raw_output = llm_client.generate_json(prompt)
+    revised_proposal = parse_revised_proposal(raw_output)
+
+    return {
+        "revised_proposal": revised_proposal.model_dump(),
+        "current_step": "revision",
     }

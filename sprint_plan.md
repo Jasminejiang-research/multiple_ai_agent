@@ -624,13 +624,13 @@
 
 ##### 5.7 Revision Node
 
-- [ ] 创建 `prompts/revision.md`。
-- [ ] prompt 要求只根据 critique 修订。
-- [ ] 写 `revision_node(state)`。
-- [ ] 输入 draft + critique。
-- [ ] 输出 revised proposal。
-- [ ] 写 mock test。
-- [ ] 提交 commit：`feat: add revision node`。
+- [x] 创建 `prompts/revision.md`。
+- [x] prompt 要求只根据 critique 修订。
+- [x] 写 `revision_node(state)`。
+- [x] 输入 draft + critique。
+- [x] 输出 revised proposal。
+- [x] 写 mock test。
+- [x] 提交 commit：`feat: add revision node`。
 
 
 

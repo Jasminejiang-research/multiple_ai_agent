@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from schemas.workflow import CritiqueReport, ProposalOutline, SectionDrafts
+from schemas.workflow import CritiqueReport, ProposalOutline, RevisedProposal, SectionDrafts
 
 MODEL_NAME = "gemini-2.5-flash"
 
@@ -106,6 +106,37 @@ class GeminiBasicCriticLLM:
         return response.text
 
 
+class GeminiRevisionLLM:
+    """Gemini-backed JSON generator for the RevisionNode."""
+
+    def __init__(self, api_key: str, model_name: str = MODEL_NAME) -> None:
+        """Initialize the Gemini client with an API key and model name."""
+        self._client = genai.Client(api_key=api_key)
+        self._model_name = model_name
+
+    def generate_json(self, prompt: str) -> str:
+        """Return JSON text matching the ``RevisedProposal`` schema."""
+        response = self._client.models.generate_content(
+            model=self._model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=RevisedProposal,
+                temperature=0.2,
+            ),
+        )
+
+        if response.parsed is not None:
+            if isinstance(response.parsed, RevisedProposal):
+                return response.parsed.model_dump_json()
+            return RevisedProposal.model_validate(response.parsed).model_dump_json()
+
+        if not response.text:
+            raise ValueError("Gemini returned an empty revision response.")
+
+        return response.text
+
+
 def create_default_planner_llm() -> GeminiPlannerLLM:
     """Create the default production LLM adapter for the planner node."""
     load_dotenv()
@@ -134,3 +165,13 @@ def create_default_basic_critic_llm() -> GeminiBasicCriticLLM:
         raise ValueError("GEMINI_API_KEY is not set in the environment.")
     model_name = os.getenv("DEFAULT_MODEL", MODEL_NAME)
     return GeminiBasicCriticLLM(api_key=api_key, model_name=model_name)
+
+
+def create_default_revision_llm() -> GeminiRevisionLLM:
+    """Create the default production LLM adapter for the RevisionNode."""
+    load_dotenv()
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY is not set in the environment.")
+    model_name = os.getenv("DEFAULT_MODEL", MODEL_NAME)
+    return GeminiRevisionLLM(api_key=api_key, model_name=model_name)

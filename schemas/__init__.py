@@ -6,6 +6,7 @@ from schemas.workflow import (
     ProposalOutline,
     ProposalOutlineSection,
     ProposalSection,
+    RevisedProposal,
     SectionDraft,
     SectionDrafts,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "ProposalOutline",
     "ProposalOutlineSection",
     "ProposalSection",
+    "RevisedProposal",
     "SectionDraft",
     "SectionDrafts",
 ]
