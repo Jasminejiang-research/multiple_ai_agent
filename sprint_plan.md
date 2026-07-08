@@ -467,14 +467,14 @@
 
 ##### 5.3 ProposalPlanner Node
 
-- [ ] 创建 `prompts/planner.md`。
-- [ ] prompt 要求输出 proposal outline。
-- [ ] 定义 `ProposalOutline` schema。
-- [ ] 写 `proposal_planner_node(state)`。
-- [ ] 调用 LLM。
-- [ ] 解析输出。
-- [ ] 保存到 state。
-- [ ] 写 mock test。
+- [x] 创建 `prompts/planner.md`。
+- [x] prompt 要求输出 proposal outline。
+- [x] 定义 `ProposalOutline` schema。
+- [x] 写 `proposal_planner_node(state)`。
+- [x] 调用 LLM。
+- [x] 解析输出。
+- [x] 保存到 state。
+- [x] 写 mock test。
 - [ ] 提交 commit：`feat: add proposal planner node`。
 
 ##### 5.4 SectionWriter Node

@@ -2,7 +2,7 @@
 
 Phase 2 (Sprint 5) replaces the single monolithic prompt with discrete,
 independently testable nodes. This module currently implements the
-``InputValidator`` node (Sprint 5.2).
+``InputValidator`` node (Sprint 5.2) and ``ProposalPlanner`` node (Sprint 5.3).
 
 Per ``architecture_design.md`` (section 6.2), ``InputValidator`` takes the
 ``UserBrief`` and produces a ``MissingInfoReport`` *without* calling the LLM.
@@ -12,9 +12,29 @@ and ask the user to complete the form before any paid LLM call happens.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from typing import Protocol
 from typing import Any
 
+from pydantic import ValidationError
+
+from schemas.workflow import PROPOSAL_SECTION_TITLES, ProposalOutline
 from workflow.state import WorkflowState
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+PLANNER_PROMPT_PATH = ROOT_DIR / "prompts" / "planner.md"
+
+
+class PlannerLLM(Protocol):
+    """Minimal LLM interface used by ``proposal_planner_node``.
+
+    Implementations receive a complete planner prompt and return JSON text
+    matching ``ProposalOutline``. Tests can provide a small fake object.
+    """
+
+    def generate_json(self, prompt: str) -> str:
+        """Generate a JSON response for the provided prompt."""
 
 # Required brief fields, mirroring the ``UserBrief`` schema in
 # architecture_design.md (section 8.2). ``stage``, ``known_competitors`` and
@@ -94,4 +114,81 @@ def input_validator_node(state: WorkflowState) -> WorkflowState:
     return {
         "missing_info": missing_info,
         "current_step": "input_validator",
+    }
+
+
+def load_planner_prompt() -> str:
+    """Load the ProposalPlanner prompt template from disk."""
+    if not PLANNER_PROMPT_PATH.is_file():
+        raise FileNotFoundError(f"Planner prompt not found: {PLANNER_PROMPT_PATH}")
+    return PLANNER_PROMPT_PATH.read_text(encoding="utf-8")
+
+
+def build_planner_prompt(user_brief: dict[str, Any]) -> str:
+    """Build the complete prompt sent to the ProposalPlanner LLM call.
+
+    Args:
+        user_brief: Validated user brief from the workflow state.
+
+    Returns:
+        Prompt text containing the planner instructions, required section
+        titles, and the current brief serialized as JSON.
+    """
+    brief_json = json.dumps(user_brief, ensure_ascii=False, indent=2)
+    section_titles = "\n".join(f"- {title}" for title in PROPOSAL_SECTION_TITLES)
+
+    return (
+        f"{load_planner_prompt()}\n\n"
+        "# Required Section Titles\n\n"
+        f"{section_titles}\n\n"
+        "# User Brief JSON\n\n"
+        f"```json\n{brief_json}\n```"
+    )
+
+
+def parse_proposal_outline(raw_output: str) -> ProposalOutline:
+    """Parse and validate the raw LLM JSON output as ``ProposalOutline``.
+
+    Args:
+        raw_output: JSON string returned by the planner LLM.
+
+    Returns:
+        A validated ``ProposalOutline`` instance.
+
+    Raises:
+        ValueError: If the output is not valid JSON or fails Pydantic validation.
+    """
+    try:
+        return ProposalOutline.model_validate_json(raw_output)
+    except (ValueError, ValidationError) as exc:
+        raise ValueError(f"Invalid ProposalOutline output: {exc}") from exc
+
+
+def proposal_planner_node(
+    state: WorkflowState,
+    llm_client: PlannerLLM | None = None,
+) -> WorkflowState:
+    """Call the LLM planner and save a validated proposal outline to state.
+
+    Args:
+        state: Current workflow state. Expected to contain ``user_brief``.
+        llm_client: Optional test or production LLM adapter implementing
+            ``generate_json(prompt: str) -> str``.
+
+    Returns:
+        A partial state update with ``proposal_outline`` and ``current_step``.
+    """
+    if llm_client is None:
+        from workflow.llm import create_default_planner_llm
+
+        llm_client = create_default_planner_llm()
+
+    user_brief = state.get("user_brief") or {}
+    prompt = build_planner_prompt(user_brief)
+    raw_output = llm_client.generate_json(prompt)
+    proposal_outline = parse_proposal_outline(raw_output)
+
+    return {
+        "proposal_outline": proposal_outline.model_dump(),
+        "current_step": "proposal_planner",
     }
