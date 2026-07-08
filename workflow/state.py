@@ -22,6 +22,8 @@ class WorkflowState(TypedDict):
     missing_info: NotRequired[list[str]]
     proposal_outline: NotRequired[dict[str, Any]]
     section_drafts: NotRequired[dict[str, Any]]
+    proposal_draft: NotRequired[dict[str, Any]]
+    markdown_preview: NotRequired[str]
     proposal: NotRequired[BusinessProposal]
     markdown: NotRequired[str]
     output_path: NotRequired[str]

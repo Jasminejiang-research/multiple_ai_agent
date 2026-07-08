@@ -598,13 +598,13 @@
 
 ##### 5.5 ProposalAssembler Node
 
-- [ ] 写 `proposal_assembler_node(state)`。
-- [ ] 将 SectionDrafts 组合成 ProposalDraft。
-- [ ] 检查 13 个章节都存在。
-- [ ] 生成 Markdown preview。
-- [ ] 不调用 LLM。
-- [ ] 写单元测试。
-- [ ] 提交 commit：`feat: add proposal assembler node`。
+- [x] 写 `proposal_assembler_node(state)`。
+- [x] 将 SectionDrafts 组合成 ProposalDraft。
+- [x] 检查 13 个章节都存在。
+- [x] 生成 Markdown preview。
+- [x] 不调用 LLM。
+- [x] 写单元测试。
+- [x] 提交 commit：`feat: add proposal assembler node`。
 
 
 

@@ -23,6 +23,26 @@ PROPOSAL_SECTION_TITLES: tuple[str, ...] = (
     "Appendix",
 )
 
+PROPOSAL_SECTION_FIELD_NAMES: tuple[str, ...] = (
+    "executive_summary",
+    "problem",
+    "target_customer",
+    "market_opportunity",
+    "solution",
+    "value_proposition",
+    "competitor_analysis",
+    "business_model",
+    "go_to_market_strategy",
+    "financial_assumptions",
+    "risks_and_mitigations",
+    "implementation_roadmap",
+    "appendix",
+)
+
+SECTION_FIELD_BY_TITLE: dict[str, str] = dict(
+    zip(PROPOSAL_SECTION_TITLES, PROPOSAL_SECTION_FIELD_NAMES, strict=True)
+)
+
 
 class ProposalOutlineSection(BaseModel):
     """Planning notes for one fixed section of the final proposal."""
@@ -213,4 +233,92 @@ class SectionDrafts(BaseModel):
         titles = tuple(section.title for section in self.sections)
         if titles != PROPOSAL_SECTION_TITLES:
             raise ValueError("SectionDrafts.sections must match the 13 fixed titles in order.")
+        return self
+
+
+class ProposalSection(BaseModel):
+    """One validated section in the assembled proposal draft.
+
+    The assembler copies each SectionWriter draft into this stricter final
+    section shape before downstream critique or export nodes can use it.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    title: Annotated[
+        Literal[
+            "Executive Summary",
+            "Problem",
+            "Target Customer",
+            "Market Opportunity",
+            "Solution",
+            "Value Proposition",
+            "Competitor Analysis",
+            "Business Model",
+            "Go-to-Market Strategy",
+            "Financial Assumptions",
+            "Risks and Mitigations",
+            "Implementation Roadmap",
+            "Appendix",
+        ],
+        Field(description="One of the 13 required proposal section titles."),
+    ]
+    content: Annotated[
+        str,
+        Field(min_length=40, description="Validated prose for this proposal section."),
+    ]
+    key_claims: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            max_length=8,
+            description="Important claims carried forward for critique.",
+        ),
+    ]
+    source_ids: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            max_length=8,
+            description="Source IDs supporting the section, empty until evidence exists.",
+        ),
+    ]
+    confidence: Annotated[
+        Literal["high", "medium", "low"],
+        Field(description="Confidence level for this assembled section."),
+    ] = "medium"
+
+
+class ProposalDraft(BaseModel):
+    """Full deterministic proposal assembled from exactly 13 section drafts."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    title: Annotated[
+        str,
+        Field(min_length=2, max_length=120, description="Working proposal title."),
+    ]
+    executive_summary: ProposalSection
+    problem: ProposalSection
+    target_customer: ProposalSection
+    market_opportunity: ProposalSection
+    solution: ProposalSection
+    value_proposition: ProposalSection
+    competitor_analysis: ProposalSection
+    business_model: ProposalSection
+    go_to_market_strategy: ProposalSection
+    financial_assumptions: ProposalSection
+    risks_and_mitigations: ProposalSection
+    implementation_roadmap: ProposalSection
+    appendix: ProposalSection
+
+    @model_validator(mode="after")
+    def ensure_fixed_sections_match_fields(self) -> "ProposalDraft":
+        """Require each proposal field to contain its matching fixed title."""
+        for title, field_name in SECTION_FIELD_BY_TITLE.items():
+            section = getattr(self, field_name)
+            if section.title != title:
+                raise ValueError(
+                    f"ProposalDraft.{field_name} must have title {title!r}."
+                )
         return self

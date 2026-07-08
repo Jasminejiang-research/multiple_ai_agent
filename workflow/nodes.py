@@ -3,7 +3,8 @@
 Phase 2 (Sprint 5) replaces the single monolithic prompt with discrete,
 independently testable nodes. This module currently implements the
 ``InputValidator`` node (Sprint 5.2), ``ProposalPlanner`` node (Sprint 5.3),
-and ``SectionWriter`` node (Sprint 5.4).
+``SectionWriter`` node (Sprint 5.4), and ``ProposalAssembler`` node
+(Sprint 5.5).
 
 Per ``architecture_design.md`` (section 6.2), ``InputValidator`` takes the
 ``UserBrief`` and produces a ``MissingInfoReport`` *without* calling the LLM.
@@ -20,7 +21,14 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from schemas.workflow import PROPOSAL_SECTION_TITLES, ProposalOutline, SectionDrafts
+from schemas.workflow import (
+    PROPOSAL_SECTION_TITLES,
+    SECTION_FIELD_BY_TITLE,
+    ProposalDraft,
+    ProposalOutline,
+    ProposalSection,
+    SectionDrafts,
+)
 from workflow.state import WorkflowState
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -294,4 +302,104 @@ def section_writer_node(
     return {
         "section_drafts": section_drafts.model_dump(),
         "current_step": "section_writer",
+    }
+
+
+def assemble_proposal_draft(section_drafts: dict[str, Any] | SectionDrafts) -> ProposalDraft:
+    """Assemble validated section drafts into a full ``ProposalDraft``.
+
+    Args:
+        section_drafts: Raw state dictionary or already validated
+            ``SectionDrafts`` object from the SectionWriter node.
+
+    Returns:
+        A validated ``ProposalDraft`` with one field per required section.
+
+    Raises:
+        ValueError: If drafts are missing, invalid, duplicated, or out of order.
+    """
+    try:
+        drafts = (
+            section_drafts
+            if isinstance(section_drafts, SectionDrafts)
+            else SectionDrafts.model_validate(section_drafts)
+        )
+    except ValidationError as exc:
+        raise ValueError(f"Invalid SectionDrafts input: {exc}") from exc
+
+    proposal_data: dict[str, Any] = {"title": drafts.proposal_title}
+    for section in drafts.sections:
+        field_name = SECTION_FIELD_BY_TITLE[section.title]
+        proposal_data[field_name] = ProposalSection.model_validate(section.model_dump())
+
+    try:
+        return ProposalDraft.model_validate(proposal_data)
+    except ValidationError as exc:
+        raise ValueError(f"Invalid assembled ProposalDraft: {exc}") from exc
+
+
+def render_proposal_preview(proposal_draft: ProposalDraft) -> str:
+    """Render an assembled proposal draft as a deterministic Markdown preview.
+
+    Args:
+        proposal_draft: Validated full proposal draft from the assembler.
+
+    Returns:
+        Markdown text with the title, all 13 sections, confidence, key claims,
+        and source IDs for quick review before critique or export.
+    """
+    lines: list[str] = [f"# {proposal_draft.title}", ""]
+
+    for section_title in PROPOSAL_SECTION_TITLES:
+        field_name = SECTION_FIELD_BY_TITLE[section_title]
+        section = getattr(proposal_draft, field_name)
+        lines.extend(
+            [
+                f"## {section.title}",
+                "",
+                f"**Confidence:** {section.confidence}",
+                "",
+                section.content,
+                "",
+            ]
+        )
+
+        if section.key_claims:
+            lines.extend(["**Key Claims:**", ""])
+            lines.extend(f"- {claim}" for claim in section.key_claims)
+            lines.append("")
+
+        if section.source_ids:
+            lines.extend(["**Source IDs:**", ""])
+            lines.extend(f"- {source_id}" for source_id in section.source_ids)
+            lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def proposal_assembler_node(state: WorkflowState) -> WorkflowState:
+    """Combine SectionWriter output into a full proposal and Markdown preview.
+
+    This node is deterministic: it validates the existing 13 section drafts,
+    maps them to the fixed ``ProposalDraft`` fields, renders a preview, and
+    never calls the LLM.
+
+    Args:
+        state: Current workflow state. Expected to contain ``section_drafts``.
+
+    Returns:
+        A partial state update with ``proposal_draft``, ``markdown_preview``,
+        and ``current_step``.
+    """
+    section_drafts = state.get("section_drafts")
+    if section_drafts is None:
+        raise ValueError("proposal_assembler_node requires section_drafts in state.")
+
+    proposal_draft = assemble_proposal_draft(section_drafts)
+    markdown_preview = render_proposal_preview(proposal_draft)
+
+    return {
+        "proposal_draft": proposal_draft.model_dump(),
+        "markdown_preview": markdown_preview,
+        "current_step": "proposal_assembler",
     }
