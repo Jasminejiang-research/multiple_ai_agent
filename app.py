@@ -11,6 +11,7 @@ from google import genai
 from google.genai import types
 
 from schemas.proposal_schema import BusinessProposal
+from workflow.graph import build_proposal_workflow_graph
 
 ROOT_DIR = Path(__file__).resolve().parent
 PROMPT_PATH = ROOT_DIR / "prompts" / "single_agent_proposal.md"
@@ -226,6 +227,32 @@ def run_proposal_pipeline(user_idea: str) -> tuple[BusinessProposal, Path, str]:
     return proposal, output_path, markdown
 
 
+def run_workflow_pipeline(user_brief: dict[str, str]) -> tuple[Path, str]:
+    """Run the deterministic LangGraph workflow and return the export path and Markdown.
+
+    Args:
+        user_brief: Validated sidebar fields mapped to ``UserBrief`` keys.
+
+    Returns:
+        A tuple of the saved Markdown path and its rendered content.
+
+    Raises:
+        ValueError: If the input is incomplete or no Markdown was produced.
+    """
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    graph = build_proposal_workflow_graph()
+    result = graph.invoke({"run_id": run_id, "user_brief": user_brief})
+
+    if result.get("missing_info"):
+        raise ValueError("Input incomplete: " + "; ".join(result["missing_info"]))
+
+    markdown = result.get("final_markdown") or result.get("markdown")
+    if not markdown:
+        raise ValueError("Workflow finished without producing a Markdown proposal.")
+
+    return Path(result["output_path"]), markdown
+
+
 def build_user_idea(
     company_name: str,
     industry: str,
@@ -249,6 +276,29 @@ Proposal Goal: {proposal_goal}
 """.strip()
 
 
+def build_user_brief(
+    company_name: str,
+    industry: str,
+    target_customer: str,
+    problem: str,
+    solution: str,
+    business_model: str,
+    geography: str,
+    proposal_goal: str,
+) -> dict[str, str]:
+    """Map sidebar form inputs to the ``UserBrief`` keys used by the workflow."""
+    return {
+        "company_or_product_name": company_name,
+        "industry": industry,
+        "target_customer": target_customer,
+        "problem": problem,
+        "solution": solution,
+        "business_model": business_model,
+        "geography": geography,
+        "proposal_goal": proposal_goal,
+    }
+
+
 def run_streamlit_app() -> None:
     import streamlit as st
 
@@ -263,6 +313,16 @@ def run_streamlit_app() -> None:
 
     with st.sidebar:
         st.header("Business Idea Input")
+        run_mode = st.radio(
+            "Run Mode",
+            ["Baseline", "Workflow"],
+            index=0,
+            help=(
+                "Baseline: single-agent prompt. "
+                "Workflow: deterministic LangGraph pipeline "
+                "(validate → plan → write → assemble → critique → revise → export)."
+            ),
+        )
         company_name = st.text_input("Company Name", placeholder="e.g. MediQuick AI")
         industry = st.text_input("Industry", placeholder="e.g. Healthcare IT")
         target_customer = st.text_input(
@@ -303,23 +363,41 @@ def run_streamlit_app() -> None:
         if missing:
             st.error(f"Please fill in all fields. Missing: {', '.join(missing)}")
         else:
-            user_idea = build_user_idea(
-                company_name=company_name.strip(),
-                industry=industry.strip(),
-                target_customer=target_customer.strip(),
-                problem=problem.strip(),
-                solution=solution.strip(),
-                business_model=business_model.strip(),
-                geography=geography.strip(),
-                proposal_goal=proposal_goal.strip(),
-            )
             try:
-                with st.spinner("Generating investor-grade proposal… This may take 20–40 seconds."):
-                    proposal, output_path, markdown = run_proposal_pipeline(user_idea)
-                st.session_state["proposal"] = proposal
-                st.session_state["markdown"] = markdown
-                st.session_state["output_path"] = str(output_path)
-                st.session_state["download_name"] = output_path.name
+                if run_mode == "Workflow":
+                    user_brief = build_user_brief(
+                        company_name=company_name.strip(),
+                        industry=industry.strip(),
+                        target_customer=target_customer.strip(),
+                        problem=problem.strip(),
+                        solution=solution.strip(),
+                        business_model=business_model.strip(),
+                        geography=geography.strip(),
+                        proposal_goal=proposal_goal.strip(),
+                    )
+                    with st.spinner("Running deterministic workflow… This may take 30–90 seconds."):
+                        output_path, markdown = run_workflow_pipeline(user_brief)
+                    st.session_state.pop("proposal", None)
+                    st.session_state["markdown"] = markdown
+                    st.session_state["output_path"] = str(output_path)
+                    st.session_state["download_name"] = output_path.name
+                else:
+                    user_idea = build_user_idea(
+                        company_name=company_name.strip(),
+                        industry=industry.strip(),
+                        target_customer=target_customer.strip(),
+                        problem=problem.strip(),
+                        solution=solution.strip(),
+                        business_model=business_model.strip(),
+                        geography=geography.strip(),
+                        proposal_goal=proposal_goal.strip(),
+                    )
+                    with st.spinner("Generating investor-grade proposal… This may take 20–40 seconds."):
+                        proposal, output_path, markdown = run_proposal_pipeline(user_idea)
+                    st.session_state["proposal"] = proposal
+                    st.session_state["markdown"] = markdown
+                    st.session_state["output_path"] = str(output_path)
+                    st.session_state["download_name"] = output_path.name
             except Exception as exc:
                 st.error(f"Generation failed: {exc}")
 
