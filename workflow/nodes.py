@@ -24,6 +24,7 @@ from pydantic import ValidationError
 from schemas.workflow import (
     PROPOSAL_SECTION_TITLES,
     SECTION_FIELD_BY_TITLE,
+    CritiqueReport,
     ProposalDraft,
     ProposalOutline,
     ProposalSection,
@@ -34,6 +35,7 @@ from workflow.state import WorkflowState
 ROOT_DIR = Path(__file__).resolve().parent.parent
 PLANNER_PROMPT_PATH = ROOT_DIR / "prompts" / "planner.md"
 SECTION_WRITER_PROMPT_PATH = ROOT_DIR / "prompts" / "section_writer.md"
+BASIC_CRITIC_PROMPT_PATH = ROOT_DIR / "prompts" / "basic_critic.md"
 
 
 class PlannerLLM(Protocol):
@@ -49,6 +51,13 @@ class PlannerLLM(Protocol):
 
 class SectionWriterLLM(Protocol):
     """Minimal LLM interface used by ``section_writer_node``."""
+
+    def generate_json(self, prompt: str) -> str:
+        """Generate a JSON response for the provided prompt."""
+
+
+class BasicCriticLLM(Protocol):
+    """Minimal LLM interface used by ``basic_critic_node``."""
 
     def generate_json(self, prompt: str) -> str:
         """Generate a JSON response for the provided prompt."""
@@ -402,4 +411,96 @@ def proposal_assembler_node(state: WorkflowState) -> WorkflowState:
         "proposal_draft": proposal_draft.model_dump(),
         "markdown_preview": markdown_preview,
         "current_step": "proposal_assembler",
+    }
+
+
+def load_basic_critic_prompt() -> str:
+    """Load the BasicCritic prompt template from disk."""
+    if not BASIC_CRITIC_PROMPT_PATH.is_file():
+        raise FileNotFoundError(
+            f"BasicCritic prompt not found: {BASIC_CRITIC_PROMPT_PATH}"
+        )
+    return BASIC_CRITIC_PROMPT_PATH.read_text(encoding="utf-8")
+
+
+def build_basic_critic_prompt(
+    user_brief: dict[str, Any],
+    proposal_draft: dict[str, Any],
+) -> str:
+    """Build the complete prompt sent to the BasicCritic LLM call.
+
+    Args:
+        user_brief: Validated user brief from the workflow state.
+        proposal_draft: Assembled draft already validated as ``ProposalDraft``.
+
+    Returns:
+        Prompt text containing critic instructions plus serialized inputs.
+    """
+    brief_json = json.dumps(user_brief, ensure_ascii=False, indent=2)
+    draft_json = json.dumps(proposal_draft, ensure_ascii=False, indent=2)
+
+    return (
+        f"{load_basic_critic_prompt()}\n\n"
+        "# User Brief JSON\n\n"
+        f"```json\n{brief_json}\n```\n\n"
+        "# Proposal Draft JSON\n\n"
+        f"```json\n{draft_json}\n```"
+    )
+
+
+def parse_critique_report(raw_output: str) -> CritiqueReport:
+    """Parse and validate the raw LLM JSON output as ``CritiqueReport``.
+
+    Args:
+        raw_output: JSON string returned by the BasicCritic LLM.
+
+    Returns:
+        A validated ``CritiqueReport`` instance.
+
+    Raises:
+        ValueError: If the output is not valid JSON or fails Pydantic validation.
+    """
+    try:
+        return CritiqueReport.model_validate_json(raw_output)
+    except (ValueError, ValidationError) as exc:
+        raise ValueError(f"Invalid CritiqueReport output: {exc}") from exc
+
+
+def basic_critic_node(
+    state: WorkflowState,
+    llm_client: BasicCriticLLM | None = None,
+) -> WorkflowState:
+    """Call the LLM critic and save a validated critique report to state.
+
+    This node reviews the assembled proposal draft for logic gaps, evidence
+    gaps, and unclear financial assumptions. It only reports issues; it does
+    not rewrite the proposal (that is the RevisionNode's job) and calls no
+    tools beyond the LLM.
+
+    Args:
+        state: Current workflow state. Expected to contain ``user_brief`` and
+            ``proposal_draft``.
+        llm_client: Optional test or production LLM adapter implementing
+            ``generate_json(prompt: str) -> str``.
+
+    Returns:
+        A partial state update with ``critique_report`` and ``current_step``.
+    """
+    if llm_client is None:
+        from workflow.llm import create_default_basic_critic_llm
+
+        llm_client = create_default_basic_critic_llm()
+
+    proposal_draft = state.get("proposal_draft")
+    if proposal_draft is None:
+        raise ValueError("basic_critic_node requires proposal_draft in state.")
+
+    user_brief = state.get("user_brief") or {}
+    prompt = build_basic_critic_prompt(user_brief, proposal_draft)
+    raw_output = llm_client.generate_json(prompt)
+    critique_report = parse_critique_report(raw_output)
+
+    return {
+        "critique_report": critique_report.model_dump(),
+        "current_step": "basic_critic",
     }

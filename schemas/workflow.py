@@ -322,3 +322,79 @@ class ProposalDraft(BaseModel):
                     f"ProposalDraft.{field_name} must have title {title!r}."
                 )
         return self
+
+
+class CritiqueIssue(BaseModel):
+    """A single issue found by the BasicCritic node in the assembled draft.
+
+    Mirrors ``architecture_design.md`` section 8.4. The critic only reports
+    problems; it never rewrites the proposal (that is the RevisionNode's job).
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    section: Annotated[
+        str,
+        Field(
+            min_length=2,
+            description="Section this issue applies to, or 'General' if cross-cutting.",
+        ),
+    ]
+    severity: Annotated[
+        Literal["low", "medium", "high", "critical"],
+        Field(description="How badly this issue affects proposal quality."),
+    ]
+    issue_type: Annotated[
+        Literal[
+            "missing_evidence",
+            "logic_gap",
+            "financial_inconsistency",
+            "unclear_customer",
+            "weak_gtm",
+            "unsupported_market_claim",
+            "hallucination_risk",
+            "writing_quality",
+        ],
+        Field(description="Category of the problem the critic identified."),
+    ]
+    description: Annotated[
+        str,
+        Field(min_length=10, description="Concrete explanation of the problem."),
+    ]
+    suggested_fix: Annotated[
+        str,
+        Field(min_length=10, description="Actionable guidance for the revision node."),
+    ]
+
+
+class CritiqueReport(BaseModel):
+    """Structured critique output from the BasicCritic workflow node.
+
+    Mirrors ``architecture_design.md`` section 8.4. ``overall_score`` is bounded
+    to 0-10 per Sprint 2.3 so downstream logic and evaluation stay comparable.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    overall_score: Annotated[
+        float,
+        Field(
+            ge=0.0,
+            le=10.0,
+            description="Holistic proposal quality score from 0 (poor) to 10 (excellent).",
+        ),
+    ]
+    issues: Annotated[
+        list[CritiqueIssue],
+        Field(
+            default_factory=list,
+            description="Specific issues found; empty means no problems detected.",
+        ),
+    ]
+    must_fix_before_export: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            description="Blocking issues that must be resolved before export.",
+        ),
+    ]

@@ -1,5 +1,7 @@
 from schemas.proposal_schema import BusinessProposal
 from schemas.workflow import (
+    CritiqueIssue,
+    CritiqueReport,
     ProposalDraft,
     ProposalOutline,
     ProposalOutlineSection,
@@ -10,6 +12,8 @@ from schemas.workflow import (
 
 __all__ = [
     "BusinessProposal",
+    "CritiqueIssue",
+    "CritiqueReport",
     "ProposalDraft",
     "ProposalOutline",
     "ProposalOutlineSection",

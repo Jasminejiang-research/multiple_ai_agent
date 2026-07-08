@@ -610,14 +610,14 @@
 
 ##### 5.6 BasicCritic Node
 
-- [ ] 创建 `prompts/basic_critic.md`。
-- [ ] prompt 要求输出 issue list。
-- [ ] 使用 CritiqueReport schema。
-- [ ] 写 `basic_critic_node(state)`。
-- [ ] 检查逻辑漏洞。
-- [ ] 检查证据缺口。
-- [ ] 检查财务假设不清楚处。
-- [ ] 写 mock test。
+- [x] 创建 `prompts/basic_critic.md`。
+- [x] prompt 要求输出 issue list。
+- [x] 使用 CritiqueReport schema。
+- [x] 写 `basic_critic_node(state)`。
+- [x] 检查逻辑漏洞。
+- [x] 检查证据缺口。
+- [x] 检查财务假设不清楚处。
+- [x] 写 mock test。
 - [ ] 提交 commit：`feat: add basic critic node`。
 
 
