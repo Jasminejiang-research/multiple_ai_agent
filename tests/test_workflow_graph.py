@@ -14,7 +14,7 @@ from schemas.workflow import (
     SectionDrafts,
 )
 from workflow.graph import build_proposal_workflow_graph
-from workflow.nodes import assemble_proposal_draft
+from workflow.nodes import assemble_proposal_draft, export_node
 from workflow.state import WorkflowState
 
 
@@ -137,6 +137,25 @@ class FakeJsonLLM:
 class ProposalWorkflowGraphTests(unittest.TestCase):
     """Tests for graph routing and full mock workflow execution."""
 
+    def test_export_node_writes_final_markdown_without_llm(self) -> None:
+        """The standalone export node saves non-empty Markdown from state."""
+        revised = RevisedProposal.model_validate_json(_revised_proposal_json())
+        state: WorkflowState = {
+            "run_id": "export-node-test",
+            "user_brief": _complete_brief(),
+            "revised_proposal": revised.model_dump(),
+        }
+
+        with TemporaryDirectory() as temp_dir:
+            result = export_node(state, output_dir=Path(temp_dir))
+
+            output_path = Path(result["output_path"])
+            self.assertEqual(result["current_step"], "export")
+            self.assertTrue(output_path.is_file())
+            self.assertIn("ai_tutor_for_mba_students", output_path.name)
+            self.assertIn("## Executive Summary", result["final_markdown"])
+            self.assertEqual(output_path.read_text(encoding="utf-8"), result["final_markdown"])
+
     def test_graph_runs_full_mock_workflow_and_exports_markdown(self) -> None:
         """A complete brief flows through every node and writes Markdown."""
         planner_llm = FakeJsonLLM(_outline_json())
@@ -159,10 +178,10 @@ class ProposalWorkflowGraphTests(unittest.TestCase):
 
             result = graph.invoke(state)
 
-            self.assertEqual(result["current_step"], "exporter")
+            self.assertEqual(result["current_step"], "export")
             self.assertEqual(result["missing_info"], [])
-            self.assertIn("## Executive Summary", result["markdown"])
-            self.assertIn("## Appendix", result["markdown"])
+            self.assertIn("## Executive Summary", result["final_markdown"])
+            self.assertIn("## Appendix", result["final_markdown"])
             self.assertTrue(Path(result["output_path"]).is_file())
             self.assertEqual(len(planner_llm.prompts), 1)
             self.assertEqual(len(writer_llm.prompts), 1)

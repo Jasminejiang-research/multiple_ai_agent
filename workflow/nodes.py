@@ -16,6 +16,8 @@ and ask the user to complete the form before any paid LLM call happens.
 from __future__ import annotations
 
 import json
+import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
 from typing import Any
@@ -35,6 +37,7 @@ from schemas.workflow import (
 from workflow.state import WorkflowState
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_OUTPUT_DIR = ROOT_DIR / "outputs"
 PLANNER_PROMPT_PATH = ROOT_DIR / "prompts" / "planner.md"
 SECTION_WRITER_PROMPT_PATH = ROOT_DIR / "prompts" / "section_writer.md"
 BASIC_CRITIC_PROMPT_PATH = ROOT_DIR / "prompts" / "basic_critic.md"
@@ -394,6 +397,70 @@ def render_proposal_preview(proposal_draft: ProposalDraft) -> str:
             lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _safe_slug(value: str) -> str:
+    """Return a filesystem-safe lowercase slug for exported proposal files."""
+    slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+    return slug or "proposal"
+
+
+def _project_name_for_export(state: WorkflowState, proposal_title: str) -> str:
+    """Choose the best available project name for an exported file."""
+    user_brief = state.get("user_brief") or {}
+    brief_name = str(user_brief.get("company_or_product_name", "")).strip()
+    return brief_name or proposal_title
+
+
+def export_node(
+    state: WorkflowState,
+    output_dir: Path | None = None,
+) -> WorkflowState:
+    """Finalize proposal Markdown and save it to disk without calling the LLM.
+
+    Args:
+        state: Current workflow state. Uses ``revised_proposal`` when available,
+            otherwise falls back to ``proposal_draft`` or ``markdown_preview``.
+        output_dir: Optional output directory, mainly for tests.
+
+    Returns:
+        A partial state update containing ``final_markdown``, ``markdown``,
+        ``output_path``, and ``current_step``.
+    """
+    proposal_title = "proposal"
+
+    revised_payload = state.get("revised_proposal")
+    if revised_payload is not None:
+        revised_proposal = RevisedProposal.model_validate(revised_payload)
+        proposal_title = revised_proposal.proposal.title
+        final_markdown = render_proposal_preview(revised_proposal.proposal)
+    elif state.get("proposal_draft") is not None:
+        proposal_draft = ProposalDraft.model_validate(state["proposal_draft"])
+        proposal_title = proposal_draft.title
+        final_markdown = render_proposal_preview(proposal_draft)
+    elif state.get("markdown_preview"):
+        final_markdown = state["markdown_preview"]
+    else:
+        raise ValueError(
+            "export_node requires revised_proposal, proposal_draft, or markdown_preview."
+        )
+
+    target_dir = output_dir or DEFAULT_OUTPUT_DIR
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    date_prefix = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    run_id = state.get("run_id", "workflow")
+    project_name = _project_name_for_export(state, proposal_title)
+    filename = f"{date_prefix}_{_safe_slug(project_name)}_{_safe_slug(run_id)}.md"
+    output_path = target_dir / filename
+    output_path.write_text(final_markdown, encoding="utf-8")
+
+    return {
+        "final_markdown": final_markdown,
+        "markdown": final_markdown,
+        "output_path": str(output_path),
+        "current_step": "export",
+    }
 
 
 def proposal_assembler_node(state: WorkflowState) -> WorkflowState:
