@@ -478,3 +478,13 @@ class FinanceAssumptions(BaseModel):
                 "FinanceAssumptions.assumption_notice must say figures are assumptions, not forecasts."
             )
         return self
+
+
+class WriterInput(BaseModel):
+    """Validated analysis packets consumed by the Writer Agent."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    research_analysis: ResearchAnalysis
+    strategy_analysis: StrategyAnalysis
+    finance_assumptions: FinanceAssumptions

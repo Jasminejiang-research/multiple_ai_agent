@@ -5,6 +5,7 @@ from agents.finance import FinanceAgent, FinanceLLM
 from agents.research import ResearchAgent, ResearchLLM
 from agents.strategy import StrategyAgent, StrategyLLM
 from agents.supervisor import SupervisorAgent, SupervisorLLM
+from agents.writer import WriterAgent, WriterLLM
 
 __all__ = [
     "AgentLogEvent",
@@ -18,4 +19,6 @@ __all__ = [
     "StrategyLLM",
     "SupervisorAgent",
     "SupervisorLLM",
+    "WriterAgent",
+    "WriterLLM",
 ]

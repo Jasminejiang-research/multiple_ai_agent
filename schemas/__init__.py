@@ -8,6 +8,7 @@ from schemas.agent_outputs import (
     SupervisorPlan,
     SupervisorTask,
     UnsupportedClaim,
+    WriterInput,
 )
 from schemas.proposal_schema import BusinessProposal
 from schemas.workflow import (
@@ -42,4 +43,5 @@ __all__ = [
     "SupervisorPlan",
     "SupervisorTask",
     "UnsupportedClaim",
+    "WriterInput",
 ]

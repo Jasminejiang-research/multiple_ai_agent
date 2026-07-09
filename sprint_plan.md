@@ -860,14 +860,14 @@
 
 ##### 7.6 Writer Agent
 
-- [ ] 创建 `agents/writer.py`。
-- [ ] 创建 `prompts/writer_agent.md`。
-- [ ] Writer 输入 research + strategy + finance。
-- [ ] Writer 输出 ProposalDraft。
-- [ ] Writer 不新增未经验证事实。
-- [ ] Writer 标注低置信度内容。
-- [ ] 写 mock test。
-- [ ] 提交 commit：`feat: add writer agent`。
+- [x] 创建 `agents/writer.py`。
+- [x] 创建 `prompts/writer_agent.md`。
+- [x] Writer 输入 research + strategy + finance。
+- [x] Writer 输出 ProposalDraft。
+- [x] Writer 不新增未经验证事实。
+- [x] Writer 标注低置信度内容。
+- [x] 写 mock test。
+- [x] 提交 commit：`feat: add writer agent`。
 
 
 
