@@ -9,8 +9,17 @@ from google import genai
 from google.genai import types
 
 from schemas.workflow import CritiqueReport, ProposalOutline, RevisedProposal, SectionDrafts
+from workflow.gemini_schema import relaxed_response_schema
 
 MODEL_NAME = "gemini-2.5-flash"
+
+# Constraint-stripped generation schemas. The strict Pydantic models above are
+# still used to validate every response; these relaxed dicts only keep Gemini's
+# constrained decoding within its "too many states for serving" budget.
+_PLANNER_SCHEMA = relaxed_response_schema(ProposalOutline)
+_SECTION_WRITER_SCHEMA = relaxed_response_schema(SectionDrafts)
+_BASIC_CRITIC_SCHEMA = relaxed_response_schema(CritiqueReport)
+_REVISION_SCHEMA = relaxed_response_schema(RevisedProposal)
 
 
 class GeminiPlannerLLM:
@@ -28,20 +37,15 @@ class GeminiPlannerLLM:
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                response_schema=ProposalOutline,
+                response_schema=_PLANNER_SCHEMA,
                 temperature=0.2,
             ),
         )
 
-        if response.parsed is not None:
-            if isinstance(response.parsed, ProposalOutline):
-                return response.parsed.model_dump_json()
-            return ProposalOutline.model_validate(response.parsed).model_dump_json()
-
         if not response.text:
             raise ValueError("Gemini returned an empty planner response.")
 
-        return response.text
+        return ProposalOutline.model_validate_json(response.text).model_dump_json()
 
 
 class GeminiSectionWriterLLM:
@@ -59,20 +63,15 @@ class GeminiSectionWriterLLM:
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                response_schema=SectionDrafts,
+                response_schema=_SECTION_WRITER_SCHEMA,
                 temperature=0.3,
             ),
         )
 
-        if response.parsed is not None:
-            if isinstance(response.parsed, SectionDrafts):
-                return response.parsed.model_dump_json()
-            return SectionDrafts.model_validate(response.parsed).model_dump_json()
-
         if not response.text:
             raise ValueError("Gemini returned an empty section writer response.")
 
-        return response.text
+        return SectionDrafts.model_validate_json(response.text).model_dump_json()
 
 
 class GeminiBasicCriticLLM:
@@ -90,20 +89,15 @@ class GeminiBasicCriticLLM:
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                response_schema=CritiqueReport,
+                response_schema=_BASIC_CRITIC_SCHEMA,
                 temperature=0.2,
             ),
         )
 
-        if response.parsed is not None:
-            if isinstance(response.parsed, CritiqueReport):
-                return response.parsed.model_dump_json()
-            return CritiqueReport.model_validate(response.parsed).model_dump_json()
-
         if not response.text:
             raise ValueError("Gemini returned an empty basic critic response.")
 
-        return response.text
+        return CritiqueReport.model_validate_json(response.text).model_dump_json()
 
 
 class GeminiRevisionLLM:
@@ -121,20 +115,15 @@ class GeminiRevisionLLM:
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                response_schema=RevisedProposal,
+                response_schema=_REVISION_SCHEMA,
                 temperature=0.2,
             ),
         )
 
-        if response.parsed is not None:
-            if isinstance(response.parsed, RevisedProposal):
-                return response.parsed.model_dump_json()
-            return RevisedProposal.model_validate(response.parsed).model_dump_json()
-
         if not response.text:
             raise ValueError("Gemini returned an empty revision response.")
 
-        return response.text
+        return RevisedProposal.model_validate_json(response.text).model_dump_json()
 
 
 def create_default_planner_llm() -> GeminiPlannerLLM:
