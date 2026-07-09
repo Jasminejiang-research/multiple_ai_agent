@@ -2,6 +2,7 @@
 
 from agents.base import AgentLogEvent, AgentLogHook, BaseAgent
 from agents.research import ResearchAgent, ResearchLLM
+from agents.strategy import StrategyAgent, StrategyLLM
 from agents.supervisor import SupervisorAgent, SupervisorLLM
 
 __all__ = [
@@ -10,6 +11,8 @@ __all__ = [
     "BaseAgent",
     "ResearchAgent",
     "ResearchLLM",
+    "StrategyAgent",
+    "StrategyLLM",
     "SupervisorAgent",
     "SupervisorLLM",
 ]

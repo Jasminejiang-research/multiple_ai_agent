@@ -1,6 +1,8 @@
 from schemas.agent_outputs import (
     ResearchAnalysis,
     ResearchFinding,
+    StrategyAnalysis,
+    StrategyInsight,
     SupervisorPlan,
     SupervisorTask,
     UnsupportedClaim,
@@ -31,6 +33,8 @@ __all__ = [
     "RevisedProposal",
     "SectionDraft",
     "SectionDrafts",
+    "StrategyAnalysis",
+    "StrategyInsight",
     "SupervisorPlan",
     "SupervisorTask",
     "UnsupportedClaim",

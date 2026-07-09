@@ -256,3 +256,102 @@ class ResearchAnalysis(BaseModel):
             description="Questions or assumptions a user should confirm.",
         ),
     ]
+
+
+class StrategyInsight(BaseModel):
+    """One strategy recommendation grounded in the brief or prior analysis."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    topic: Annotated[
+        str,
+        Field(
+            min_length=3,
+            max_length=120,
+            description="Short topic label for this strategy insight.",
+        ),
+    ]
+    recommendation: Annotated[
+        str,
+        Field(
+            min_length=20,
+            description="Strategic recommendation written without unsupported market data.",
+        ),
+    ]
+    rationale: Annotated[
+        str,
+        Field(
+            min_length=20,
+            description="Why this recommendation follows from the available input.",
+        ),
+    ]
+    confidence: Annotated[
+        ResearchConfidence,
+        Field(description="Confidence level based on the available brief and analysis packets."),
+    ] = "medium"
+
+
+class StrategyAnalysis(BaseModel):
+    """Structured output from the Strategy Agent.
+
+    The Strategy Agent designs positioning, business model logic, GTM strategy,
+    and moat hypotheses. It does not invent market data or write proposal prose.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    analysis_summary: Annotated[
+        str,
+        Field(
+            min_length=20,
+            description="Brief overview of the strategic direction and uncertainty level.",
+        ),
+    ]
+    value_proposition: Annotated[
+        list[StrategyInsight],
+        Field(
+            min_length=1,
+            max_length=5,
+            description="Customer-facing value proposition recommendations.",
+        ),
+    ]
+    business_model_logic: Annotated[
+        list[StrategyInsight],
+        Field(
+            min_length=1,
+            max_length=5,
+            description="How the product could create, deliver, and capture value.",
+        ),
+    ]
+    gtm_strategy: Annotated[
+        list[StrategyInsight],
+        Field(
+            min_length=1,
+            max_length=5,
+            description="Go-to-market motions and sequencing hypotheses.",
+        ),
+    ]
+    moat_hypotheses: Annotated[
+        list[StrategyInsight],
+        Field(
+            min_length=1,
+            max_length=5,
+            description="Defensibility hypotheses that require later validation.",
+        ),
+    ]
+    unsupported_market_data: Annotated[
+        list[UnsupportedClaim],
+        Field(
+            default_factory=list,
+            max_length=8,
+            description="Market-size or growth claims the strategy must not treat as facts.",
+        ),
+    ]
+    needs_human_review: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            max_length=8,
+            description="Strategic assumptions a user should confirm.",
+        ),
+    ]

@@ -830,15 +830,15 @@
 
 ##### 7.4 Strategy Agent
 
-- [ ] 创建 `agents/strategy.py`。
-- [ ] 创建 `prompts/strategy_agent.md`。
-- [ ] 定义 `StrategyAnalysis` schema。
-- [ ] 输出 value proposition。
-- [ ] 输出 business model logic。
-- [ ] 输出 GTM strategy。
-- [ ] 输出 moat hypotheses。
-- [ ] 不编造 market data。
-- [ ] 写 mock test。
+- [x] 创建 `agents/strategy.py`。
+- [x] 创建 `prompts/strategy_agent.md`。
+- [x] 定义 `StrategyAnalysis` schema。
+- [x] 输出 value proposition。
+- [x] 输出 business model logic。
+- [x] 输出 GTM strategy。
+- [x] 输出 moat hypotheses。
+- [x] 不编造 market data。
+- [x] 写 mock test。
 - [ ] 提交 commit：`feat: add strategy agent`。
 
 
