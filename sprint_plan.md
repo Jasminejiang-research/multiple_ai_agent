@@ -644,14 +644,14 @@
 
 ##### 7.1 Agent Base Interface
 
-- [ ] 创建 `agents/base.py`。
-- [ ] 定义 `BaseAgent`。
-- [ ] 字段包含 `name`。
-- [ ] 字段包含 `description`。
-- [ ] 字段包含 `prompt_path`。
-- [ ] 定义 `run(input) -> output` 接口。
-- [ ] 添加日志记录 hook。
-- [ ] 写 mock agent test。
+- [x] 创建 `agents/base.py`。
+- [x] 定义 `BaseAgent`。
+- [x] 字段包含 `name`。
+- [x] 字段包含 `description`。
+- [x] 字段包含 `prompt_path`。
+- [x] 定义 `run(input) -> output` 接口。
+- [x] 添加日志记录 hook。
+- [x] 写 mock agent test。
 - [ ] 提交 commit：`feat: add base agent interface`。
 
 ##### 7.2 Supervisor Agent
