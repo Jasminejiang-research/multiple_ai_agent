@@ -647,16 +647,16 @@
 - [x] 设置正常边。
 - [x] 设置 missing info 分支。
 - [x] 写端到端 mock test。
-- [ ] 提交 commit：`feat: assemble proposal workflow graph`。
+- [x] 提交 commit：`feat: assemble proposal workflow graph`。
 
 
 
 #### Definition of Done
 
-- [ ] workflow 可以跑完整流程。
-- [ ] 每一步有明确输入输出。
-- [ ] 中间节点可以单独测试。
-- [ ] Streamlit 可以选择运行 baseline 或 workflow。
+- [x] workflow 可以跑完整流程。
+- [x] 每一步有明确输入输出。
+- [x] 中间节点可以单独测试。
+- [x] Streamlit 可以选择运行 baseline 或 workflow。
 
 ---
 
@@ -686,12 +686,12 @@
 
 ##### 6.1 SQLite Setup
 
-- [ ] 添加 `sqlalchemy` 依赖。
-- [ ] 创建 `storage/db.py`。
-- [ ] 创建 SQLite 连接。
-- [ ] 默认数据库路径为 `data/app.db`。
-- [ ] 创建 `data/` 文件夹。
-- [ ] `.gitignore` 排除 `data/*.db`。
+- [x] 添加 `sqlalchemy` 依赖。
+- [x] 创建 `storage/db.py`。
+- [x] 创建 SQLite 连接。
+- [x] 默认数据库路径为 `data/app.db`。
+- [x] 创建 `data/` 文件夹。
+- [x] `.gitignore` 排除 `data/*.db`。
 - [ ] 提交 commit：`chore: add sqlite storage setup`。
 
 
