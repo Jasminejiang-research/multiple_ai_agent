@@ -583,14 +583,14 @@
 
 ##### 6.3 Run Repository
 
-- [ ] 创建 `storage/repositories.py`。
-- [ ] 写 `create_run()`。
-- [ ] 写 `update_run_status()`。
-- [ ] 写 `save_node_output()`。
-- [ ] 写 `save_error()`。
-- [ ] 写 `get_run()`。
-- [ ] 写 `list_runs()`。
-- [ ] 写单元测试。
+- [x] 创建 `storage/repositories.py`。
+- [x] 写 `create_run()`。
+- [x] 写 `update_run_status()`。
+- [x] 写 `save_node_output()`。
+- [x] 写 `save_error()`。
+- [x] 写 `get_run()`。
+- [x] 写 `list_runs()`。
+- [x] 写单元测试。
 - [ ] 提交 commit：`feat: add run repository`。
 
 ##### 6.4 Workflow Logging
