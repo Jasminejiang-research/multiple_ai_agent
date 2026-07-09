@@ -873,16 +873,16 @@
 
 ##### 7.7 Critic Agent
 
-- [ ] 创建 `agents/critic.py`。
-- [ ] 创建 `prompts/critic_agent.md`。
-- [ ] Critic 输入 ProposalDraft。
-- [ ] Critic 输出 CritiqueReport。
-- [ ] Critic 检查 unsupported claims。
-- [ ] Critic 检查 financial inconsistency。
-- [ ] Critic 检查 weak GTM。
-- [ ] Critic 不直接重写 proposal。
-- [ ] 写 mock test。
-- [ ] 提交 commit：`feat: add critic agent`。
+- [x] 创建 `agents/critic.py`。
+- [x] 创建 `prompts/critic_agent.md`。
+- [x] Critic 输入 ProposalDraft。
+- [x] Critic 输出 CritiqueReport。
+- [x] Critic 检查 unsupported claims。
+- [x] Critic 检查 financial inconsistency。
+- [x] Critic 检查 weak GTM。
+- [x] Critic 不直接重写 proposal。
+- [x] 写 mock test。
+- [x] 提交 commit：`feat: add critic agent`。
 
 
 
