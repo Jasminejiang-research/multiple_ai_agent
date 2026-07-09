@@ -605,13 +605,13 @@
 
 ##### 6.5 Run Detail UI
 
-- [ ] 在 Streamlit sidebar 添加 recent runs。
-- [ ] 点击 run 显示输入 brief。
-- [ ] 显示每个节点状态。
-- [ ] 显示每个节点输出 preview。
-- [ ] 显示 error message。
-- [ ] 显示 final output path。
-- [ ] 提交 commit：`feat: add run detail view`。
+- [x] 在 Streamlit sidebar 添加 recent runs。
+- [x] 点击 run 显示输入 brief。
+- [x] 显示每个节点状态。
+- [x] 显示每个节点输出 preview。
+- [x] 显示 error message。
+- [x] 显示 final output path。
+- [x] 提交 commit：`feat: add run detail view`。
 
 #### Definition of Done
 

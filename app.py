@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 from google import genai
@@ -13,10 +15,11 @@ from google.genai import types
 
 from schemas.proposal_schema import BusinessProposal
 from storage.db import Base, engine, get_session
-from storage.repositories import create_run, get_run, update_run_status
+from storage.repositories import create_run, get_run, list_runs, update_run_status
 from workflow.graph import build_proposal_workflow_graph
 from workflow.logging import (
     PROMPT_VERSION,
+    WORKFLOW_STEP_NAMES,
     WORKFLOW_VERSION,
     summarize_step_statuses,
 )
@@ -35,6 +38,37 @@ class WorkflowPipelineResult:
     markdown: str
     run_id: str
     step_statuses: list[dict[str, str]]
+
+
+@dataclass(frozen=True)
+class RunSummary:
+    """Compact run metadata for the recent runs sidebar."""
+
+    run_id: str
+    label: str
+    status: str
+
+
+@dataclass(frozen=True)
+class NodeOutputPreview:
+    """Streamlit-facing preview of one workflow node's latest log entry."""
+
+    step: str
+    status: str
+    output_preview: str
+    prompt_version: str = ""
+
+
+@dataclass(frozen=True)
+class RunDetail:
+    """Full run detail data needed by the Streamlit run detail view."""
+
+    run_id: str
+    status: str
+    input_brief: dict[str, Any] | None
+    node_outputs: list[NodeOutputPreview]
+    error_messages: list[str]
+    final_output_path: str | None
 
 
 def load_api_key() -> str:
@@ -266,6 +300,105 @@ def _get_step_statuses(run_id: str) -> list[dict[str, str]]:
         return summarize_step_statuses(run)
 
 
+def _format_run_label(run_id: str, status: str, created_at: datetime) -> str:
+    """Build a readable label for a recent run selector or button."""
+    created_label = created_at.strftime("%Y-%m-%d %H:%M")
+    return f"{created_label} · {status} · {run_id}"
+
+
+def get_recent_run_summaries(limit: int = 5) -> list[RunSummary]:
+    """Return recent persisted workflow runs for the Streamlit sidebar."""
+    _ensure_run_history_tables()
+    with get_session() as session:
+        runs = list_runs(session, limit=limit)
+        return [
+            RunSummary(
+                run_id=run.run_id,
+                status=run.status,
+                label=_format_run_label(run.run_id, run.status, run.created_at),
+            )
+            for run in runs
+        ]
+
+
+def _json_preview(value: Any, max_chars: int = 900) -> str:
+    """Convert logged JSON-like values into a short human-readable preview."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        text = value
+    else:
+        text = json.dumps(value, ensure_ascii=False, indent=2, default=str)
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 3].rstrip() + "..."
+
+
+def _extract_final_output_path(run: Any) -> str | None:
+    """Read the final exported Markdown path from the latest export node log."""
+    node_outputs = sorted(run.node_outputs, key=lambda item: (item.created_at, item.id))
+    for node_output in reversed(node_outputs):
+        if node_output.node_name != "export":
+            continue
+        snapshot = node_output.output_snapshot or {}
+        output = snapshot.get("output") or {}
+        output_path = output.get("output_path")
+        if output_path:
+            return str(output_path)
+    return None
+
+
+def build_run_detail(run: Any) -> RunDetail:
+    """Transform a persisted run record into UI-safe detail data."""
+    latest_by_step: dict[str, NodeOutputPreview] = {}
+    for node_output in sorted(
+        run.node_outputs,
+        key=lambda item: (item.created_at, item.id),
+    ):
+        snapshot = node_output.output_snapshot or {}
+        output = snapshot.get("output", snapshot)
+        latest_by_step[node_output.node_name] = NodeOutputPreview(
+            step=node_output.node_name,
+            status=str(snapshot.get("status", "completed")),
+            prompt_version=str(snapshot.get("prompt_version", "")),
+            output_preview=_json_preview(output),
+        )
+
+    ordered_steps = [
+        latest_by_step[step_name]
+        for step_name in WORKFLOW_STEP_NAMES
+        if step_name in latest_by_step
+    ]
+    extra_steps = [
+        preview
+        for step_name, preview in latest_by_step.items()
+        if step_name not in WORKFLOW_STEP_NAMES
+    ]
+    error_messages = [
+        f"{error.step_name or 'workflow'}: {error.error_type}: {error.error_message}"
+        for error in sorted(run.errors, key=lambda item: (item.created_at, item.id))
+    ]
+
+    return RunDetail(
+        run_id=run.run_id,
+        status=run.status,
+        input_brief=run.input_brief,
+        node_outputs=ordered_steps + extra_steps,
+        error_messages=error_messages,
+        final_output_path=_extract_final_output_path(run),
+    )
+
+
+def get_run_detail(run_id: str) -> RunDetail | None:
+    """Load one persisted run detail for Streamlit display."""
+    _ensure_run_history_tables()
+    with get_session() as session:
+        run = get_run(session, run_id)
+        if run is None:
+            return None
+        return build_run_detail(run)
+
+
 def run_workflow_pipeline(user_brief: dict[str, str]) -> WorkflowPipelineResult:
     """Run the deterministic LangGraph workflow and return persisted run details.
 
@@ -360,6 +493,71 @@ def build_user_brief(
     }
 
 
+def _render_recent_runs_sidebar(st_module: Any) -> None:
+    """Render recent persisted workflow runs in the Streamlit sidebar."""
+    st_module.divider()
+    st_module.subheader("Recent Runs")
+    try:
+        recent_runs = get_recent_run_summaries()
+    except Exception as exc:
+        st_module.caption(f"Run history unavailable: {exc}")
+        return
+
+    if not recent_runs:
+        st_module.caption("No workflow runs saved yet.")
+        return
+
+    for run_summary in recent_runs:
+        if st_module.button(
+            run_summary.label,
+            key=f"recent_run_{run_summary.run_id}",
+            use_container_width=True,
+        ):
+            st_module.session_state["selected_run_id"] = run_summary.run_id
+
+
+def _render_run_detail(st_module: Any, run_id: str) -> None:
+    """Render input, node logs, errors, and export path for one run."""
+    detail = get_run_detail(run_id)
+    if detail is None:
+        st_module.warning(f"Run not found: `{run_id}`")
+        return
+
+    st_module.subheader("Run Detail")
+    st_module.caption(f"Run ID: `{detail.run_id}` · Status: `{detail.status}`")
+
+    with st_module.expander("Input Brief", expanded=True):
+        st_module.json(detail.input_brief or {})
+
+    st_module.markdown("**Node Status and Output Preview**")
+    if detail.node_outputs:
+        for node_output in detail.node_outputs:
+            with st_module.expander(
+                f"{node_output.step} · {node_output.status}",
+                expanded=False,
+            ):
+                if node_output.prompt_version:
+                    st_module.caption(f"Prompt version: `{node_output.prompt_version}`")
+                if node_output.output_preview:
+                    st_module.code(node_output.output_preview, language="json")
+                else:
+                    st_module.caption("No output snapshot saved for this node.")
+    else:
+        st_module.caption("No node outputs saved for this run.")
+
+    if detail.error_messages:
+        st_module.markdown("**Errors**")
+        for error_message in detail.error_messages:
+            st_module.error(error_message)
+
+    if detail.final_output_path:
+        st_module.success(f"Final output path: `{detail.final_output_path}`")
+    else:
+        st_module.caption("Final output path not saved yet.")
+
+    st_module.divider()
+
+
 def run_streamlit_app() -> None:
     import streamlit as st
 
@@ -408,6 +606,7 @@ def run_streamlit_app() -> None:
             placeholder="e.g. Seed funding pitch, accelerator application, internal validation",
         )
         generate_clicked = st.button("Generate Proposal", type="primary", use_container_width=True)
+        _render_recent_runs_sidebar(st)
 
     if generate_clicked:
         required_fields = {
@@ -446,6 +645,7 @@ def run_streamlit_app() -> None:
                     st.session_state["workflow_step_statuses"] = (
                         workflow_result.step_statuses
                     )
+                    st.session_state["selected_run_id"] = workflow_result.run_id
                 else:
                     user_idea = build_user_idea(
                         company_name=company_name.strip(),
@@ -467,6 +667,10 @@ def run_streamlit_app() -> None:
                     st.session_state.pop("workflow_step_statuses", None)
             except Exception as exc:
                 st.error(f"Generation failed: {exc}")
+
+    selected_run_id = st.session_state.get("selected_run_id")
+    if selected_run_id:
+        _render_run_detail(st, selected_run_id)
 
     if "markdown" in st.session_state:
         st.success(f"Report saved to `{st.session_state['output_path']}`")
