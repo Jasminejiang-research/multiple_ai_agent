@@ -1,3 +1,4 @@
+from schemas.agent_outputs import SupervisorPlan, SupervisorTask
 from schemas.proposal_schema import BusinessProposal
 from schemas.workflow import (
     CritiqueIssue,
@@ -22,4 +23,6 @@ __all__ = [
     "RevisedProposal",
     "SectionDraft",
     "SectionDrafts",
+    "SupervisorPlan",
+    "SupervisorTask",
 ]
