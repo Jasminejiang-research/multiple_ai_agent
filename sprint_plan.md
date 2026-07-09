@@ -19,8 +19,6 @@
 - [ ] 不提前实现 MCP、复杂 Web 前端、多用户权限、自动发邮件。
 - [ ] 所有 API key 只放 `.env`，不要提交到 Git。
 
-
-
 ### Cursor Completion Report Protocol
 
 每完成一个 Task checkbox 后，Cursor 必须回答：
@@ -33,15 +31,9 @@
 
 ---
 
-
-
 ## Phase 0 - 定义项目边界，不写代码 (Sprint 0)
 
-
-
 ### Sprint 0 - Project Boundary and Documentation
-
-
 
 #### Goal
 
@@ -56,11 +48,7 @@
 - `docs/EVALUATION_RUBRIC.md`
 - `docs/architecture_design.md`
 
-
-
 #### Tasks
-
-
 
 ##### 0.1 Repository Setup
 
@@ -78,8 +66,6 @@
 - [ ] 创建 `tests/` 文件夹。
 - [ ] 提交 commit：`chore: initialize repository structure`。
 
-
-
 ##### 0.2 README v0
 
 - [ ] 在 README 写项目名称：`Open Proposal Agent`。
@@ -91,8 +77,6 @@
 - [ ] 写 10 行以内 Quickstart 占位。
 - [ ] 写 Roadmap 占位。
 - [ ] 提交 commit：`docs: add initial README`。
-
-
 
 ##### 0.3 PRD
 
@@ -107,8 +91,6 @@
 - [ ] 写 Open Questions。
 - [ ] 提交 commit：`docs: add PRD`。
 
-
-
 ##### 0.4 User Stories
 
 - [ ] 创建 `docs/USER_STORIES.md`。
@@ -119,8 +101,6 @@
 - [ ] 每条用户故事加 acceptance criteria。
 - [ ] 提交 commit：`docs: add user stories`。
 
-
-
 ##### 0.5 Output Schema Documentation
 
 - [ ] 创建 `docs/PROPOSAL_OUTPUT_SCHEMA.md`。
@@ -130,8 +110,6 @@
 - [ ] 为每个章节写禁止内容。
 - [ ] 定义 key claims 和 citations 的要求。
 - [ ] 提交 commit：`docs: define proposal output schema`。
-
-
 
 ##### 0.6 Evaluation Rubric Documentation
 
@@ -144,8 +122,6 @@
 - [ ] 写总分计算方式。
 - [ ] 提交 commit：`docs: add evaluation rubric`。
 
-
-
 #### Definition of Done
 
 - [ ] 项目边界清楚。
@@ -156,15 +132,9 @@
 
 ---
 
-
-
 ## Phase 1 - 做一个 Single-Agent Baseline (Sprints 1-4)
 
-
-
 ### Sprint 1 - Python Project Foundation
-
-
 
 #### Goal
 
@@ -177,11 +147,7 @@
 - `tests/test_imports.py`
 - `.env.example`
 
-
-
 #### Tasks
-
-
 
 ##### 1.1 Python Environment
 
@@ -196,8 +162,6 @@
 - [ ] 运行 `python --version` 确认环境。
 - [ ] 提交 commit：`chore: add python project configuration`。
 
-
-
 ##### 1.2 Package Structure
 
 - [ ] 创建 `src/open_proposal_agent/__init__.py`。
@@ -211,8 +175,6 @@
 - [ ] 运行 `pytest`。
 - [ ] 提交 commit：`chore: add package skeleton`。
 
-
-
 ##### 1.3 Environment Variables
 
 - [ ] 在 `.env.example` 添加 `OPENAI_API_KEY=`。
@@ -224,8 +186,6 @@
 - [ ] 写测试确认 config 可加载。
 - [ ] 提交 commit：`chore: add environment configuration`。
 
-
-
 #### Definition of Done
 
 - [ ] `pytest` 可运行。
@@ -235,11 +195,7 @@
 
 ---
 
-
-
 ### Sprint 2 - Core Schemas
-
-
 
 #### Goal
 
@@ -251,11 +207,7 @@
 - `src/open_proposal_agent/schemas/workflow.py`
 - `tests/test_schemas.py`
 
-
-
 #### Tasks
-
-
 
 ##### 2.1 User Input Schema
 
@@ -277,8 +229,6 @@
 - [ ] 写 missing required field 测试。
 - [ ] 提交 commit：`feat: add user brief schema`。
 
-
-
 ##### 2.2 Proposal Output Schema
 
 - [ ] 定义 `ProposalSection` schema。
@@ -293,8 +243,6 @@
 - [ ] 写测试确认空 content 不通过。
 - [ ] 提交 commit：`feat: add proposal output schema`。
 
-
-
 ##### 2.3 Critique Schema
 
 - [ ] 定义 `CritiqueSeverity` enum。
@@ -307,8 +255,6 @@
 - [ ] 写测试确认 score 超出范围会失败。
 - [ ] 提交 commit：`feat: add critique schema`。
 
-
-
 ##### 2.4 Markdown Rendering Schema Support
 
 - [ ] 给 `ProposalDraft` 添加 `to_markdown()` 方法或单独 renderer。
@@ -319,8 +265,6 @@
 - [ ] 写测试确认 Markdown 字符串包含 `Executive Summary`。
 - [ ] 提交 commit：`feat: add proposal markdown renderer`。
 
-
-
 #### Definition of Done
 
 - [ ] 所有核心 schema 可用。
@@ -329,11 +273,7 @@
 
 ---
 
-
-
 ### Sprint 3 - Single-Agent Baseline
-
-
 
 #### Goal
 
@@ -346,11 +286,7 @@
 - `src/open_proposal_agent/baseline.py`
 - `outputs/*.md`
 
-
-
 #### Tasks
-
-
 
 ##### 3.1 Prompt File
 
@@ -365,8 +301,6 @@
 - [ ] 写 Quality Criteria。
 - [ ] 提交 commit：`feat: add single agent prompt`。
 
-
-
 ##### 3.2 LLM Client
 
 - [ ] 创建 `llm/client.py`。
@@ -378,8 +312,6 @@
 - [ ] 加错误处理：API 调用失败时返回可读异常。
 - [ ] 写一个不调用真实 API 的 mock test。
 - [ ] 提交 commit：`feat: add llm client wrapper`。
-
-
 
 ##### 3.3 Baseline Generator
 
@@ -393,8 +325,6 @@
 - [ ] 暂时允许 Markdown response，不强制 JSON。
 - [ ] 提交 commit：`feat: implement single agent baseline generator`。
 
-
-
 ##### 3.4 Export Markdown
 
 - [ ] 创建 `export/markdown.py`。
@@ -406,8 +336,6 @@
 - [ ] 写测试确认文件被创建。
 - [ ] 提交 commit：`feat: add markdown exporter`。
 
-
-
 ##### 3.5 Manual Test Case
 
 - [ ] 创建 `examples/sample_input.json`。
@@ -417,8 +345,6 @@
 - [ ] 保存 Markdown。
 - [ ] 手动检查是否有 13 个章节。
 - [ ] 提交 commit：`test: add baseline sample input`。
-
-
 
 #### Definition of Done
 
@@ -430,11 +356,7 @@
 
 ---
 
-
-
 ### Sprint 4 - Streamlit MVP UI
-
-
 
 #### Goal
 
@@ -446,11 +368,7 @@
 - Streamlit 表单
 - Markdown 下载按钮
 
-
-
 #### Tasks
-
-
 
 ##### 4.1 Basic App
 
@@ -461,8 +379,6 @@
 - [ ] 添加 warning：输出是草案，不是法律/投资建议。
 - [ ] 运行 `streamlit run app.py`。
 - [ ] 提交 commit：`feat: add streamlit app shell`。
-
-
 
 ##### 4.2 User Form
 
@@ -480,8 +396,6 @@
 - [ ] 表单缺失时显示 validation error。
 - [ ] 提交 commit：`feat: add proposal input form`。
 
-
-
 ##### 4.3 Generate Button
 
 - [ ] 添加 `Generate Proposal` 按钮。
@@ -493,8 +407,6 @@
 - [ ] 添加下载按钮。
 - [ ] 提交 commit：`feat: connect streamlit app to baseline generator`。
 
-
-
 ##### 4.4 UI Robustness
 
 - [ ] API key 缺失时在 UI 中显示明确错误。
@@ -503,8 +415,6 @@
 - [ ] 生成过程中禁用重复点击。
 - [ ] README 添加 Streamlit 运行命令。
 - [ ] 提交 commit：`fix: improve streamlit error handling`。
-
-
 
 #### Definition of Done
 
@@ -515,15 +425,9 @@
 
 ---
 
-
-
 ## Phase 2 - 把 Single-Agent 改成 Deterministic Workflow (Sprints 5-6)
 
-
-
 ### Sprint 5 - Deterministic Workflow with LangGraph
-
-
 
 #### Goal
 
@@ -538,11 +442,7 @@
 - `prompts/basic_critic.md`
 - `prompts/revision.md`
 
-
-
 #### Tasks
-
-
 
 ##### 5.1 Install and Prepare LangGraph
 
@@ -554,8 +454,6 @@
 - [x] 写最小 import test。
 - [x] 提交 commit：`chore: add langgraph workflow foundation`。
 
-
-
 ##### 5.2 InputValidator Node
 
 - [x] 写 `input_validator_node(state)`。
@@ -566,8 +464,6 @@
 - [x] 写单元测试：完整输入通过。
 - [x] 写单元测试：缺字段返回 missing info。
 - [x] 提交 commit：`feat: add input validator node`。
-
-
 
 ##### 5.3 ProposalPlanner Node
 
@@ -581,8 +477,6 @@
 - [x] 写 mock test。
 - [x] 提交 commit：`feat: add proposal planner node`。
 
-
-
 ##### 5.4 SectionWriter Node
 
 - [x] 创建 `prompts/section_writer.md`。
@@ -594,8 +488,6 @@
 - [x] 写 mock test。
 - [x] 提交 commit：`feat: add section writer node`。
 
-
-
 ##### 5.5 ProposalAssembler Node
 
 - [x] 写 `proposal_assembler_node(state)`。
@@ -605,8 +497,6 @@
 - [x] 不调用 LLM。
 - [x] 写单元测试。
 - [x] 提交 commit：`feat: add proposal assembler node`。
-
-
 
 ##### 5.6 BasicCritic Node
 
@@ -620,8 +510,6 @@
 - [x] 写 mock test。
 - [x] 提交 commit：`feat: add basic critic node`。
 
-
-
 ##### 5.7 Revision Node
 
 - [x] 创建 `prompts/revision.md`。
@@ -631,8 +519,6 @@
 - [x] 输出 revised proposal。
 - [x] 写 mock test。
 - [x] 提交 commit：`feat: add revision node`。
-
-
 
 ##### 5.8 Graph Assembly
 
@@ -649,8 +535,6 @@
 - [x] 写端到端 mock test。
 - [x] 提交 commit：`feat: assemble proposal workflow graph`。
 
-
-
 #### Definition of Done
 
 - [x] workflow 可以跑完整流程。
@@ -660,11 +544,7 @@
 
 ---
 
-
-
 ### Sprint 6 - Persistence and Observability
-
-
 
 #### Goal
 
@@ -678,11 +558,7 @@
 - basic logging
 - run detail UI
 
-
-
 #### Tasks
-
-
 
 ##### 6.1 SQLite Setup
 
@@ -692,22 +568,18 @@
 - [x] 默认数据库路径为 `data/app.db`。
 - [x] 创建 `data/` 文件夹。
 - [x] `.gitignore` 排除 `data/*.db`。
-- [ ] 提交 commit：`chore: add sqlite storage setup`。
-
-
+- [ ] *提交 commit：*`chore: add sqlite storage setup`。
 
 ##### 6.2 DB Models
 
-- [ ] 创建 `storage/models.py`。
-- [ ] 定义 `RunRecord` table。
-- [ ] 定义 `NodeOutput` table。
-- [ ] 定义 `AgentOutput` table。
-- [ ] 定义 `ProposalOutput` table。
-- [ ] 定义 `ErrorRecord` table。
-- [ ] 写测试创建表。
+- [x] 创建 `storage/models.py`。
+- [x] 定义 `RunRecord` table。
+- [x] 定义 `NodeOutput` table。
+- [x] 定义 `AgentOutput` table。
+- [x] 定义 `ProposalOutput` table。
+- [x] 定义 `ErrorRecord` table。
+- [x] 写测试创建表。
 - [ ] 提交 commit：`feat: add database models`。
-
-
 
 ##### 6.3 Run Repository
 
@@ -721,8 +593,6 @@
 - [ ] 写单元测试。
 - [ ] 提交 commit：`feat: add run repository`。
 
-
-
 ##### 6.4 Workflow Logging
 
 - [ ] 每个 workflow node 开始时记录 step name。
@@ -732,8 +602,6 @@
 - [ ] 在 Streamlit 显示 run_id。
 - [ ] 在 Streamlit 显示每步状态。
 - [ ] 提交 commit：`feat: add workflow run logging`。
-
-
 
 ##### 6.5 Run Detail UI
 
@@ -745,8 +613,6 @@
 - [ ] 显示 final output path。
 - [ ] 提交 commit：`feat: add run detail view`。
 
-
-
 #### Definition of Done
 
 - [ ] 每次生成都有 run_id。
@@ -756,15 +622,9 @@
 
 ---
 
-
-
 ## Phase 3 - 引入真正的 Multiple Agents (Sprint 7)
 
-
-
 ### Sprint 7 - First Multi-Agent Version
-
-
 
 #### Goal
 
@@ -780,11 +640,7 @@
 - `agents/critic.py`
 - corresponding prompts and schemas
 
-
-
 #### Tasks
-
-
 
 ##### 7.1 Agent Base Interface
 
@@ -798,8 +654,6 @@
 - [ ] 写 mock agent test。
 - [ ] 提交 commit：`feat: add base agent interface`。
 
-
-
 ##### 7.2 Supervisor Agent
 
 - [ ] 创建 `agents/supervisor.py`。
@@ -810,8 +664,6 @@
 - [ ] Supervisor 不直接生成研究结论。
 - [ ] 写 mock test。
 - [ ] 提交 commit：`feat: add supervisor agent`。
-
-
 
 ##### 7.3 Research Agent
 
@@ -826,8 +678,6 @@
 - [ ] 写 mock test。
 - [ ] 提交 commit：`feat: add research agent`。
 
-
-
 ##### 7.4 Strategy Agent
 
 - [ ] 创建 `agents/strategy.py`。
@@ -840,8 +690,6 @@
 - [ ] 不编造 market data。
 - [ ] 写 mock test。
 - [ ] 提交 commit：`feat: add strategy agent`。
-
-
 
 ##### 7.5 Finance Agent
 
@@ -856,8 +704,6 @@
 - [ ] 写 mock test。
 - [ ] 提交 commit：`feat: add finance agent`。
 
-
-
 ##### 7.6 Writer Agent
 
 - [ ] 创建 `agents/writer.py`。
@@ -868,8 +714,6 @@
 - [ ] Writer 标注低置信度内容。
 - [ ] 写 mock test。
 - [ ] 提交 commit：`feat: add writer agent`。
-
-
 
 ##### 7.7 Critic Agent
 
@@ -883,8 +727,6 @@
 - [ ] Critic 不直接重写 proposal。
 - [ ] 写 mock test。
 - [ ] 提交 commit：`feat: add critic agent`。
-
-
 
 ##### 7.8 Multi-Agent Workflow
 
@@ -900,8 +742,6 @@
 - [ ] Streamlit 增加运行模式选择：Baseline / Workflow / Multi-Agent。
 - [ ] 提交 commit：`feat: add controlled multi-agent workflow`。
 
-
-
 #### Definition of Done
 
 - [ ] 系统不是只有 Agent 名字，而是有职责隔离。
@@ -912,15 +752,9 @@
 
 ---
 
-
-
 ## Phase 4 - 加入 RAG 和 Proposal Knowledge Base (Sprint 8)
 
-
-
 ### Sprint 8 - RAG and Knowledge Base
-
-
 
 #### Goal
 
@@ -937,11 +771,7 @@
 - `rag/retriever.py`
 - `rag/citation_checker.py`
 
-
-
 #### Tasks
-
-
 
 ##### 8.1 Knowledge Base Folders
 
@@ -952,8 +782,6 @@
 - [ ] 每个文件夹添加 `.gitkeep`。
 - [ ] README 说明每个文件夹用途。
 - [ ] 提交 commit：`chore: add knowledge base folders`。
-
-
 
 ##### 8.2 Seed Documents
 
@@ -967,8 +795,6 @@
 - [ ] 添加 unit economics framework Markdown。
 - [ ] 提交 commit：`docs: add seed knowledge base documents`。
 
-
-
 ##### 8.3 Document Loaders
 
 - [ ] 创建 `rag/loaders.py`。
@@ -978,8 +804,6 @@
 - [ ] 每个 loaded document 保存 source metadata。
 - [ ] 写测试加载 Markdown。
 - [ ] 提交 commit：`feat: add document loaders`。
-
-
 
 ##### 8.4 Vector Index
 
@@ -991,8 +815,6 @@
 - [ ] 实现 `load_index()`。
 - [ ] 写测试：index 可创建。
 - [ ] 提交 commit：`feat: add vector index`。
-
-
 
 ##### 8.5 Retriever
 
@@ -1007,8 +829,6 @@
 - [ ] 写测试：query 返回 chunk。
 - [ ] 提交 commit：`feat: add RAG retriever`。
 
-
-
 ##### 8.6 Evidence Filter
 
 - [ ] 实现 `filter_evidence(chunks, min_score)`。
@@ -1018,8 +838,6 @@
 - [ ] 保留 source metadata。
 - [ ] 写测试。
 - [ ] 提交 commit：`feat: add evidence filter`。
-
-
 
 ##### 8.7 Citation Checker
 
@@ -1033,8 +851,6 @@
 - [ ] 写测试。
 - [ ] 提交 commit：`feat: add citation checker`。
 
-
-
 ##### 8.8 RAG-enabled Writer
 
 - [ ] 修改 Writer Agent 输入，加入 evidence chunks。
@@ -1043,8 +859,6 @@
 - [ ] 修改 workflow，在写章节前检索相关资料。
 - [ ] 在 Streamlit 显示 sources。
 - [ ] 提交 commit：`feat: integrate RAG into proposal writing`。
-
-
 
 #### Definition of Done
 
@@ -1055,15 +869,9 @@
 
 ---
 
-
-
 ## Phase 5 - 加入 Web Research，但必须受控 (Sprint 9)
 
-
-
 ### Sprint 9 - Controlled Web Research and Citation
-
-
 
 #### Goal
 
@@ -1076,11 +884,7 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - `sources` database table
 - citation UI
 
-
-
 #### Tasks
-
-
 
 ##### 9.1 Source Schema
 
@@ -1097,8 +901,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 写测试。
 - [ ] 提交 commit：`feat: add source schemas`。
 
-
-
 ##### 9.2 Web Search Tool Interface
 
 - [ ] 创建 `tools/web_search.py`。
@@ -1109,8 +911,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 记录 timestamp。
 - [ ] 写 mock test。
 - [ ] 提交 commit：`feat: add controlled web search interface`。
-
-
 
 ##### 9.3 Real Search Provider
 
@@ -1123,8 +923,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 写 integration note，不在 CI 中调用真实 API。
 - [ ] 提交 commit：`feat: add web search provider integration`。
 
-
-
 ##### 9.4 Source Quality Ranking
 
 - [ ] 实现 `classify_source_quality(url, publisher)`。
@@ -1136,8 +934,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 写测试覆盖 5 类来源。
 - [ ] 提交 commit：`feat: add source quality classifier`。
 
-
-
 ##### 9.5 Recency Filter
 
 - [ ] 实现 published_date 解析。
@@ -1146,8 +942,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 在 proposal 中要求注明过时资料。
 - [ ] 写测试。
 - [ ] 提交 commit：`feat: add source recency filter`。
-
-
 
 ##### 9.6 Integrate with Agents
 
@@ -1159,8 +953,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 在 Streamlit 显示 sources table。
 - [ ] 提交 commit：`feat: integrate web research into research agents`。
 
-
-
 ##### 9.7 Citation Enforcement
 
 - [ ] 对 market size 相关 claim 要求 citation。
@@ -1169,8 +961,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 如果无 citation，则 Critic 标记 high severity。
 - [ ] 如果 source low quality，则 Critic 标记 medium severity。
 - [ ] 提交 commit：`feat: enforce citations for key claims`。
-
-
 
 #### Definition of Done
 
@@ -1181,15 +971,9 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 
 ---
 
-
-
 ## Phase 6 - 加入 Human-in-the-loop (Sprint 10)
 
-
-
 ### Sprint 10 - Human-in-the-loop
-
-
 
 #### Goal
 
@@ -1202,11 +986,7 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - Streamlit approval UI
 - audit logs
 
-
-
 #### Tasks
-
-
 
 ##### 10.1 Approval Schema
 
@@ -1223,8 +1003,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 写测试。
 - [ ] 提交 commit：`feat: add approval schema`。
 
-
-
 ##### 10.2 Approval Storage
 
 - [ ] 在 DB 添加 approvals table。
@@ -1232,8 +1010,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 写 `get_approvals_for_run()`。
 - [ ] 写测试。
 - [ ] 提交 commit：`feat: add approval storage`。
-
-
 
 ##### 10.3 Approval Points
 
@@ -1243,8 +1019,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 在 finance assumptions 后添加 approval point。
 - [ ] 在 final proposal 前添加 approval point。
 - [ ] 提交 commit：`feat: add workflow approval points`。
-
-
 
 ##### 10.4 Streamlit Approval UI
 
@@ -1258,8 +1032,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 审批后继续 workflow。
 - [ ] 提交 commit：`feat: add human approval UI`。
 
-
-
 ##### 10.5 Audit Log UI
 
 - [ ] 在 run detail 页面显示 approvals。
@@ -1268,8 +1040,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 显示用户评论。
 - [ ] 显示编辑前后差异的简化 preview。
 - [ ] 提交 commit：`feat: add approval audit log view`。
-
-
 
 #### Definition of Done
 
@@ -1280,15 +1050,9 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 
 ---
 
-
-
 ## Phase 7 - 加入评估系统，这是“博士生水平”的关键 (Sprints 11-12)
 
-
-
 ### Sprint 11 - Evaluation Benchmark
-
-
 
 #### Goal
 
@@ -1301,11 +1065,7 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - `src/open_proposal_agent/evals/runner.py`
 - eval report
 
-
-
 #### Tasks
-
-
 
 ##### 11.1 Eval Case Format
 
@@ -1317,8 +1077,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 字段包含 evaluation_notes。
 - [ ] 写 sample YAML。
 - [ ] 提交 commit：`feat: define evaluation case format`。
-
-
 
 ##### 11.2 Create 10 Test Cases
 
@@ -1333,8 +1091,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 创建 `legal_ops_case.yaml`。
 - [ ] 创建 `restaurant_inventory_case.yaml`。
 - [ ] 提交 commit：`test: add initial evaluation cases`。
-
-
 
 ##### 11.3 Rubric YAML
 
@@ -1352,8 +1108,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 每个维度写 1-5 分标准。
 - [ ] 提交 commit：`feat: add evaluation rubric yaml`。
 
-
-
 ##### 11.4 Evaluation Runner
 
 - [ ] 创建 `evals/runner.py`。
@@ -1365,8 +1119,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 输出 Markdown report。
 - [ ] 写 dry-run 模式。
 - [ ] 提交 commit：`feat: add evaluation runner`。
-
-
 
 ##### 11.5 Baseline vs Multi-Agent Comparison
 
@@ -1380,8 +1132,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 不编造结果；没有数据就写 TBD。
 - [ ] 提交 commit：`eval: add baseline comparison report`。
 
-
-
 ##### 11.6 CI Evaluation Skeleton
 
 - [ ] 创建 `.github/workflows/test.yml`。
@@ -1392,8 +1142,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 不在 CI 中强制调用付费 LLM。
 - [ ] 提交 commit：`ci: add test and eval workflows`。
 
-
-
 #### Definition of Done
 
 - [ ] 至少 10 个 eval cases。
@@ -1403,11 +1151,7 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 
 ---
 
-
-
 ### Sprint 12 - Testing and Prompt Regression
-
-
 
 #### Goal
 
@@ -1419,11 +1163,7 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - promptfoo config optional
 - regression report
 
-
-
 #### Tasks
-
-
 
 ##### 12.1 Unit Test Coverage
 
@@ -1437,8 +1177,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 测试 source classifier。
 - [ ] 提交 commit：`test: expand unit test coverage`。
 
-
-
 ##### 12.2 Workflow Tests
 
 - [ ] 用 mock LLM 测试 baseline。
@@ -1449,8 +1187,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 测试 approval pause branch。
 - [ ] 提交 commit：`test: add workflow tests`。
 
-
-
 ##### 12.3 Prompt Versioning
 
 - [ ] 为每个 prompt 顶部添加 version。
@@ -1458,8 +1194,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 在 run record 中保存 prompt version。
 - [ ] 在 README 说明 prompt 更新规则。
 - [ ] 提交 commit：`chore: add prompt versioning`。
-
-
 
 ##### 12.4 Promptfoo Optional Setup
 
@@ -1471,8 +1205,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 记录如何本地运行 promptfoo。
 - [ ] 提交 commit：`eval: add prompt regression skeleton`。
 
-
-
 #### Definition of Done
 
 - [ ] 关键 schema 和 workflow 有测试。
@@ -1481,15 +1213,9 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 
 ---
 
-
-
 ## Phase 8 - 加入 MCP，但不要太早 (Sprint 13)
 
-
-
 ### Sprint 13 - MCP Adapter and Security Model
-
-
 
 #### Goal
 
@@ -1502,11 +1228,7 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - File MCP server prototype
 - Search MCP adapter prototype
 
-
-
 #### Tasks
-
-
 
 ##### 13.1 Security Documentation
 
@@ -1520,8 +1242,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 写 audit log policy。
 - [ ] 提交 commit：`docs: add security model`。
 
-
-
 ##### 13.2 Tool Permission Model
 
 - [ ] 定义 `ToolPermission` schema。
@@ -1532,8 +1252,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 定义 allowed_domains。
 - [ ] 写测试。
 - [ ] 提交 commit：`feat: add tool permission model`。
-
-
 
 ##### 13.3 MCP Adapter Skeleton
 
@@ -1546,8 +1264,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 写 mock test。
 - [ ] 提交 commit：`feat: add MCP adapter skeleton`。
 
-
-
 ##### 13.4 File MCP Prototype
 
 - [ ] 设计 File MCP server 只读项目目录。
@@ -1558,8 +1274,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 写安全测试：拒绝 `../.env`。
 - [ ] 提交 commit：`feat: prototype secure file MCP access`。
 
-
-
 ##### 13.5 Search MCP Prototype
 
 - [ ] 将现有 `search_web` 包装为 MCP-style tool。
@@ -1568,8 +1282,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 保留 source quality ranking。
 - [ ] 保留 audit log。
 - [ ] 提交 commit：`feat: prototype search MCP adapter`。
-
-
 
 #### Definition of Done
 
@@ -1580,15 +1292,9 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 
 ---
 
-
-
 ## Phase 9 - 做成真正开源产品 (Sprints 14-15)
 
-
-
 ### Sprint 14 - Docker and Deployment
-
-
 
 #### Goal
 
@@ -1600,11 +1306,7 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - `docker-compose.yml`
 - deployment docs
 
-
-
 #### Tasks
-
-
 
 ##### 14.1 Dockerfile
 
@@ -1619,8 +1321,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 本地 build image。
 - [ ] 提交 commit：`build: add Dockerfile`。
 
-
-
 ##### 14.2 Docker Compose
 
 - [ ] 创建 `docker-compose.yml`。
@@ -1631,8 +1331,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 本地运行 `docker compose up`。
 - [ ] README 添加 Docker 运行方式。
 - [ ] 提交 commit：`build: add docker compose setup`。
-
-
 
 ##### 14.3 Deployment Notes
 
@@ -1645,8 +1343,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 写环境变量配置。
 - [ ] 提交 commit：`docs: add deployment guide`。
 
-
-
 #### Definition of Done
 
 - [ ] `docker compose up` 可以启动 app。
@@ -1655,11 +1351,7 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 
 ---
 
-
-
 ### Sprint 15 - Open Source Release v0.1.0
-
-
 
 #### Goal
 
@@ -1673,11 +1365,7 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - examples complete
 - GitHub release v0.1.0
 
-
-
 #### Tasks
-
-
 
 ##### 15.1 License
 
@@ -1685,8 +1373,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 添加 `LICENSE` 文件。
 - [ ] README 标注 license。
 - [ ] 提交 commit：`docs: add Apache 2.0 license`。
-
-
 
 ##### 15.2 README Finalization
 
@@ -1702,8 +1388,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] README 添加 Citation / Acknowledgements。
 - [ ] 提交 commit：`docs: finalize README for v0.1.0`。
 
-
-
 ##### 15.3 Examples
 
 - [ ] 添加 `examples/sample_input.json`。
@@ -1712,8 +1396,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 添加 `examples/sample_output_multi_agent.md`，如果已完成。
 - [ ] 添加 sample sources，避免包含版权敏感内容。
 - [ ] 提交 commit：`docs: add runnable examples`。
-
-
 
 ##### 15.4 Documentation Review
 
@@ -1726,8 +1408,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 检查 `docs/deployment.md`。
 - [ ] 修复过时内容。
 - [ ] 提交 commit：`docs: polish documentation`。
-
-
 
 ##### 15.5 Release Preparation
 
@@ -1742,8 +1422,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 写 release notes。
 - [ ] 提交 commit：`release: v0.1.0`。
 
-
-
 #### Definition of Done
 
 - [ ] 新用户可以 clone 并运行。
@@ -1753,8 +1431,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] GitHub Release 发布。
 
 ---
-
-
 
 ## 16-week Suggested Timeline
 
@@ -1774,8 +1450,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 
 ---
 
-
-
 ## Minimum MVP Checklist
 
 只要下面这些完成，就可以认为 MVP 成立：
@@ -1792,8 +1466,6 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 - [ ] 项目没有提交密钥。
 
 ---
-
-
 
 ## Research-grade Checklist
 
@@ -1821,11 +1493,7 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 
 ---
 
-
-
 ## Cursor Prompt Templates
-
-
 
 ### Prompt 1 - Implement One Task Only
 
@@ -1843,8 +1511,6 @@ Constraints:
 - After coding, summarize changed files and how to test.
 ```
 
-
-
 ### Prompt 2 - Debug a Failing Test
 
 ```text
@@ -1858,8 +1524,6 @@ Please:
 3. Do not rewrite unrelated modules.
 4. Show how to rerun the test.
 ```
-
-
 
 ### Prompt 3 - Add a New Agent
 
@@ -1880,8 +1544,6 @@ Requirements:
 - Do not connect it to the main workflow until I ask.
 ```
 
-
-
 ### Prompt 4 - Review Architecture Before Coding
 
 ```text
@@ -1895,8 +1557,6 @@ Do not write code yet.
 ```
 
 ---
-
-
 
 ## Commit Message Convention
 
@@ -1917,8 +1577,6 @@ release: v0.1.0
 ```
 
 ---
-
-
 
 ## Stop Conditions
 
