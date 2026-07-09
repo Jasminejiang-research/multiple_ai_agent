@@ -1,4 +1,6 @@
 from schemas.agent_outputs import (
+    FinanceAssumption,
+    FinanceAssumptions,
     ResearchAnalysis,
     ResearchFinding,
     StrategyAnalysis,
@@ -24,6 +26,8 @@ __all__ = [
     "BusinessProposal",
     "CritiqueIssue",
     "CritiqueReport",
+    "FinanceAssumption",
+    "FinanceAssumptions",
     "ProposalDraft",
     "ProposalOutline",
     "ProposalOutlineSection",

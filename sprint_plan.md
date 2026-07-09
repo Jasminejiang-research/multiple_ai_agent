@@ -845,16 +845,16 @@
 
 ##### 7.5 Finance Agent
 
-- [ ] 创建 `agents/finance.py`。
-- [ ] 创建 `prompts/finance_agent.md`。
-- [ ] 定义 `FinanceAssumptions` schema。
-- [ ] 输出 revenue assumptions。
-- [ ] 输出 cost assumptions。
-- [ ] 输出 unit economics assumptions。
-- [ ] 输出 break-even discussion。
-- [ ] 明确所有数字是 assumptions，不是预测。
-- [ ] 写 mock test。
-- [ ] 提交 commit：`feat: add finance agent`。
+- [x] 创建 `agents/finance.py`。
+- [x] 创建 `prompts/finance_agent.md`。
+- [x] 定义 `FinanceAssumptions` schema。
+- [x] 输出 revenue assumptions。
+- [x] 输出 cost assumptions。
+- [x] 输出 unit economics assumptions。
+- [x] 输出 break-even discussion。
+- [x] 明确所有数字是 assumptions，不是预测。
+- [x] 写 mock test。
+- [x] 提交 commit：`feat: add finance agent`。
 
 
 

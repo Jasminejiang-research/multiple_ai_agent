@@ -355,3 +355,126 @@ class StrategyAnalysis(BaseModel):
             description="Strategic assumptions a user should confirm.",
         ),
     ]
+
+
+class FinanceAssumption(BaseModel):
+    """One financial assumption clearly labeled as a hypothesis, not a forecast."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    topic: Annotated[
+        str,
+        Field(
+            min_length=3,
+            max_length=120,
+            description="Short label for this financial assumption.",
+        ),
+    ]
+    assumption: Annotated[
+        str,
+        Field(
+            min_length=20,
+            description="Financial assumption phrased as an assumption, not a prediction.",
+        ),
+    ]
+    rationale: Annotated[
+        str,
+        Field(
+            min_length=20,
+            description="Why this assumption follows from the brief or strategy context.",
+        ),
+    ]
+    confidence: Annotated[
+        ResearchConfidence,
+        Field(description="Confidence level based on the available brief and analysis packets."),
+    ] = "medium"
+    needs_validation: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            max_length=5,
+            description="Evidence, user input, or calculations needed before relying on this assumption.",
+        ),
+    ]
+
+
+class FinanceAssumptions(BaseModel):
+    """Structured output from the Finance Agent.
+
+    The Finance Agent frames revenue, cost, unit economics, and break-even
+    assumptions. It must not present any numbers as accurate predictions.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    analysis_summary: Annotated[
+        str,
+        Field(
+            min_length=20,
+            description="Brief overview of the financial assumption set and uncertainty level.",
+        ),
+    ]
+    revenue_assumptions: Annotated[
+        list[FinanceAssumption],
+        Field(
+            min_length=1,
+            max_length=6,
+            description="Revenue model and monetization assumptions.",
+        ),
+    ]
+    cost_assumptions: Annotated[
+        list[FinanceAssumption],
+        Field(
+            min_length=1,
+            max_length=6,
+            description="Operating, delivery, acquisition, and fixed-cost assumptions.",
+        ),
+    ]
+    unit_economics_assumptions: Annotated[
+        list[FinanceAssumption],
+        Field(
+            min_length=1,
+            max_length=6,
+            description="Customer-level economics such as pricing, margin, CAC, payback, or retention assumptions.",
+        ),
+    ]
+    break_even_discussion: Annotated[
+        str,
+        Field(
+            min_length=30,
+            description="Qualitative break-even discussion with assumptions labeled as uncertain.",
+        ),
+    ]
+    assumption_notice: Annotated[
+        str,
+        Field(
+            min_length=30,
+            description="Explicit notice that all figures are assumptions, not forecasts.",
+        ),
+    ]
+    unsupported_financial_claims: Annotated[
+        list[UnsupportedClaim],
+        Field(
+            default_factory=list,
+            max_length=8,
+            description="Financial claims that need evidence, benchmarks, or user confirmation.",
+        ),
+    ]
+    needs_human_review: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            max_length=8,
+            description="Financial assumptions a user should confirm before proposal export.",
+        ),
+    ]
+
+    @model_validator(mode="after")
+    def ensure_assumption_notice_is_explicit(self) -> "FinanceAssumptions":
+        """Require the output to state that financial figures are assumptions."""
+        notice = self.assumption_notice.lower()
+        if "assumption" not in notice or "forecast" not in notice:
+            raise ValueError(
+                "FinanceAssumptions.assumption_notice must say figures are assumptions, not forecasts."
+            )
+        return self
