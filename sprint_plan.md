@@ -815,15 +815,15 @@
 
 ##### 7.3 Research Agent
 
-- [ ] 创建 `agents/research.py`。
-- [ ] 创建 `prompts/research_agent.md`。
-- [ ] 定义 `ResearchAnalysis` schema。
-- [ ] 输出 market trends。
-- [ ] 输出 customer notes。
-- [ ] 输出 competitor assumptions。
-- [ ] 明确标注 unsupported claims。
-- [ ] 不做完整 proposal 写作。
-- [ ] 写 mock test。
+- [x] 创建 `agents/research.py`。
+- [x] 创建 `prompts/research_agent.md`。
+- [x] 定义 `ResearchAnalysis` schema。
+- [x] 输出 market trends。
+- [x] 输出 customer notes。
+- [x] 输出 competitor assumptions。
+- [x] 明确标注 unsupported claims。
+- [x] 不做完整 proposal 写作。
+- [x] 写 mock test。
 - [ ] 提交 commit：`feat: add research agent`。
 
 

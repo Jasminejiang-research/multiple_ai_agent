@@ -1,4 +1,10 @@
-from schemas.agent_outputs import SupervisorPlan, SupervisorTask
+from schemas.agent_outputs import (
+    ResearchAnalysis,
+    ResearchFinding,
+    SupervisorPlan,
+    SupervisorTask,
+    UnsupportedClaim,
+)
 from schemas.proposal_schema import BusinessProposal
 from schemas.workflow import (
     CritiqueIssue,
@@ -20,9 +26,12 @@ __all__ = [
     "ProposalOutline",
     "ProposalOutlineSection",
     "ProposalSection",
+    "ResearchAnalysis",
+    "ResearchFinding",
     "RevisedProposal",
     "SectionDraft",
     "SectionDrafts",
     "SupervisorPlan",
     "SupervisorTask",
+    "UnsupportedClaim",
 ]

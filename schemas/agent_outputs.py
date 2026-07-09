@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 AgentRole = Literal["research", "strategy", "finance", "writer", "critic"]
+ResearchConfidence = Literal["high", "medium", "low"]
 
 
 class SupervisorTask(BaseModel):
@@ -134,3 +135,124 @@ class SupervisorPlan(BaseModel):
                 )
 
         return self
+
+
+class ResearchFinding(BaseModel):
+    """One brief-grounded research observation for downstream proposal agents."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    topic: Annotated[
+        str,
+        Field(
+            min_length=3,
+            max_length=120,
+            description="Short topic label for the research finding.",
+        ),
+    ]
+    finding: Annotated[
+        str,
+        Field(
+            min_length=20,
+            description="Research note written as an assumption or hypothesis, not a verified fact.",
+        ),
+    ]
+    rationale: Annotated[
+        str,
+        Field(
+            min_length=20,
+            description="Why this finding follows from the user brief or known inputs.",
+        ),
+    ]
+    confidence: Annotated[
+        ResearchConfidence,
+        Field(description="Confidence level based on evidence available to this agent."),
+    ] = "medium"
+
+
+class UnsupportedClaim(BaseModel):
+    """A claim that needs evidence before it can be used as a proposal fact."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    claim: Annotated[
+        str,
+        Field(
+            min_length=10,
+            description="The unsupported claim or tempting market statement.",
+        ),
+    ]
+    why_unsupported: Annotated[
+        str,
+        Field(
+            min_length=20,
+            description="Explanation of what evidence is missing.",
+        ),
+    ]
+    needed_evidence: Annotated[
+        list[str],
+        Field(
+            min_length=1,
+            max_length=5,
+            description="Source types or facts needed before the claim can be trusted.",
+        ),
+    ]
+
+
+class ResearchAnalysis(BaseModel):
+    """Structured output from the Research Agent.
+
+    The Research Agent summarizes market, customer, and competitor hypotheses for
+    later agents. It does not write proposal prose or present unsupported facts
+    as verified conclusions.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    analysis_summary: Annotated[
+        str,
+        Field(
+            min_length=20,
+            description="Brief overview of the research analysis and uncertainty level.",
+        ),
+    ]
+    market_trends: Annotated[
+        list[ResearchFinding],
+        Field(
+            min_length=1,
+            max_length=6,
+            description="Market trend hypotheses relevant to the brief.",
+        ),
+    ]
+    customer_notes: Annotated[
+        list[ResearchFinding],
+        Field(
+            min_length=1,
+            max_length=6,
+            description="Customer pain, behavior, and buying-context notes.",
+        ),
+    ]
+    competitor_assumptions: Annotated[
+        list[ResearchFinding],
+        Field(
+            min_length=1,
+            max_length=6,
+            description="Competitor or substitute assumptions that require later evidence.",
+        ),
+    ]
+    unsupported_claims: Annotated[
+        list[UnsupportedClaim],
+        Field(
+            default_factory=list,
+            max_length=8,
+            description="Claims that must not be treated as verified without sources.",
+        ),
+    ]
+    needs_human_review: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            max_length=8,
+            description="Questions or assumptions a user should confirm.",
+        ),
+    ]
