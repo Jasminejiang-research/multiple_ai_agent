@@ -13,6 +13,7 @@ from typing import Any
 
 from langgraph.graph import END, StateGraph
 
+from workflow.logging import SessionFactory, with_workflow_logging
 from workflow.nodes import (
     BasicCriticLLM,
     PlannerLLM,
@@ -43,6 +44,7 @@ def build_proposal_workflow_graph(
     critic_llm: BasicCriticLLM | None = None,
     revision_llm: RevisionLLM | None = None,
     output_dir: Path | None = None,
+    logging_session_factory: SessionFactory | None = None,
 ) -> Any:
     """Build and compile the Phase 2 deterministic proposal workflow graph.
 
@@ -52,31 +54,70 @@ def build_proposal_workflow_graph(
         critic_llm: Optional LLM adapter for the basic critic node.
         revision_llm: Optional LLM adapter for the revision node.
         output_dir: Optional exporter output directory, mainly for tests.
+        logging_session_factory: Optional SQLAlchemy session context factory
+            used to persist workflow run logs.
 
     Returns:
         A compiled LangGraph application ready to invoke with ``WorkflowState``.
     """
     graph = StateGraph(WorkflowState)
 
-    graph.add_node("validator", input_validator_node)
+    graph.add_node(
+        "validator",
+        with_workflow_logging(
+            "input_validator",
+            input_validator_node,
+            logging_session_factory,
+        ),
+    )
     graph.add_node(
         "planner",
-        lambda state: proposal_planner_node(state, llm_client=planner_llm),
+        with_workflow_logging(
+            "proposal_planner",
+            lambda state: proposal_planner_node(state, llm_client=planner_llm),
+            logging_session_factory,
+        ),
     )
     graph.add_node(
         "section_writer",
-        lambda state: section_writer_node(state, llm_client=section_writer_llm),
+        with_workflow_logging(
+            "section_writer",
+            lambda state: section_writer_node(state, llm_client=section_writer_llm),
+            logging_session_factory,
+        ),
     )
-    graph.add_node("assembler", proposal_assembler_node)
+    graph.add_node(
+        "assembler",
+        with_workflow_logging(
+            "proposal_assembler",
+            proposal_assembler_node,
+            logging_session_factory,
+        ),
+    )
     graph.add_node(
         "critic",
-        lambda state: basic_critic_node(state, llm_client=critic_llm),
+        with_workflow_logging(
+            "basic_critic",
+            lambda state: basic_critic_node(state, llm_client=critic_llm),
+            logging_session_factory,
+        ),
     )
     graph.add_node(
         "revision",
-        lambda state: revision_node(state, llm_client=revision_llm),
+        with_workflow_logging(
+            "revision",
+            lambda state: revision_node(state, llm_client=revision_llm),
+            logging_session_factory,
+        ),
     )
-    graph.add_node("export", lambda state: export_node(state, output_dir=output_dir))
+    graph.add_node(
+        "export",
+        with_workflow_logging(
+            "export",
+            lambda state: export_node(state, output_dir=output_dir),
+            logging_session_factory,
+        ),
+    )
 
     graph.set_entry_point("validator")
     graph.add_conditional_edges(

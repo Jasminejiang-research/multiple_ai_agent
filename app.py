@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -11,12 +12,29 @@ from google import genai
 from google.genai import types
 
 from schemas.proposal_schema import BusinessProposal
+from storage.db import Base, engine, get_session
+from storage.repositories import create_run, get_run, update_run_status
 from workflow.graph import build_proposal_workflow_graph
+from workflow.logging import (
+    PROMPT_VERSION,
+    WORKFLOW_VERSION,
+    summarize_step_statuses,
+)
 
 ROOT_DIR = Path(__file__).resolve().parent
 PROMPT_PATH = ROOT_DIR / "prompts" / "single_agent_proposal.md"
 OUTPUT_DIR = ROOT_DIR / "outputs"
 MODEL_NAME = "gemini-2.5-flash"
+
+
+@dataclass(frozen=True)
+class WorkflowPipelineResult:
+    """Streamlit-facing summary of a persisted workflow run."""
+
+    output_path: Path
+    markdown: str
+    run_id: str
+    step_statuses: list[dict[str, str]]
 
 
 def load_api_key() -> str:
@@ -227,30 +245,73 @@ def run_proposal_pipeline(user_idea: str) -> tuple[BusinessProposal, Path, str]:
     return proposal, output_path, markdown
 
 
-def run_workflow_pipeline(user_brief: dict[str, str]) -> tuple[Path, str]:
-    """Run the deterministic LangGraph workflow and return the export path and Markdown.
+def _ensure_run_history_tables() -> None:
+    """Create run history tables for local SQLite deployments."""
+    Base.metadata.create_all(engine)
+
+
+def _set_run_status(run_id: str, status: str) -> None:
+    """Persist a top-level workflow run status."""
+    with get_session() as session:
+        update_run_status(session, run_id, status)
+        session.commit()
+
+
+def _get_step_statuses(run_id: str) -> list[dict[str, str]]:
+    """Read latest workflow step statuses for Streamlit display."""
+    with get_session() as session:
+        run = get_run(session, run_id)
+        if run is None:
+            return []
+        return summarize_step_statuses(run)
+
+
+def run_workflow_pipeline(user_brief: dict[str, str]) -> WorkflowPipelineResult:
+    """Run the deterministic LangGraph workflow and return persisted run details.
 
     Args:
         user_brief: Validated sidebar fields mapped to ``UserBrief`` keys.
 
     Returns:
-        A tuple of the saved Markdown path and its rendered content.
+        Saved Markdown, run id, and step statuses for UI display.
 
     Raises:
         ValueError: If the input is incomplete or no Markdown was produced.
     """
-    run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    graph = build_proposal_workflow_graph()
+    _ensure_run_history_tables()
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+    with get_session() as session:
+        create_run(
+            session,
+            run_id=run_id,
+            session_id="streamlit",
+            workflow_version=WORKFLOW_VERSION,
+            prompt_version=PROMPT_VERSION,
+            model_name=MODEL_NAME,
+            input_brief=user_brief,
+        )
+        update_run_status(session, run_id, "running")
+        session.commit()
+
+    graph = build_proposal_workflow_graph(logging_session_factory=get_session)
     result = graph.invoke({"run_id": run_id, "user_brief": user_brief})
 
     if result.get("missing_info"):
+        _set_run_status(run_id, "needs_input")
         raise ValueError("Input incomplete: " + "; ".join(result["missing_info"]))
 
     markdown = result.get("final_markdown") or result.get("markdown")
     if not markdown:
+        _set_run_status(run_id, "failed")
         raise ValueError("Workflow finished without producing a Markdown proposal.")
 
-    return Path(result["output_path"]), markdown
+    _set_run_status(run_id, "completed")
+    return WorkflowPipelineResult(
+        output_path=Path(result["output_path"]),
+        markdown=markdown,
+        run_id=run_id,
+        step_statuses=_get_step_statuses(run_id),
+    )
 
 
 def build_user_idea(
@@ -376,11 +437,15 @@ def run_streamlit_app() -> None:
                         proposal_goal=proposal_goal.strip(),
                     )
                     with st.spinner("Running deterministic workflow… This may take 30–90 seconds."):
-                        output_path, markdown = run_workflow_pipeline(user_brief)
+                        workflow_result = run_workflow_pipeline(user_brief)
                     st.session_state.pop("proposal", None)
-                    st.session_state["markdown"] = markdown
-                    st.session_state["output_path"] = str(output_path)
-                    st.session_state["download_name"] = output_path.name
+                    st.session_state["markdown"] = workflow_result.markdown
+                    st.session_state["output_path"] = str(workflow_result.output_path)
+                    st.session_state["download_name"] = workflow_result.output_path.name
+                    st.session_state["workflow_run_id"] = workflow_result.run_id
+                    st.session_state["workflow_step_statuses"] = (
+                        workflow_result.step_statuses
+                    )
                 else:
                     user_idea = build_user_idea(
                         company_name=company_name.strip(),
@@ -398,11 +463,22 @@ def run_streamlit_app() -> None:
                     st.session_state["markdown"] = markdown
                     st.session_state["output_path"] = str(output_path)
                     st.session_state["download_name"] = output_path.name
+                    st.session_state.pop("workflow_run_id", None)
+                    st.session_state.pop("workflow_step_statuses", None)
             except Exception as exc:
                 st.error(f"Generation failed: {exc}")
 
     if "markdown" in st.session_state:
         st.success(f"Report saved to `{st.session_state['output_path']}`")
+        if "workflow_run_id" in st.session_state:
+            st.caption(f"Workflow run_id: `{st.session_state['workflow_run_id']}`")
+            step_statuses = st.session_state.get("workflow_step_statuses", [])
+            if step_statuses:
+                st.subheader("Workflow Steps")
+                for step_status in step_statuses:
+                    st.write(
+                        f"- `{step_status['step']}`: {step_status['status']}"
+                    )
         st.download_button(
             label="Download Markdown",
             data=st.session_state["markdown"],

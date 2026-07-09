@@ -595,12 +595,12 @@
 
 ##### 6.4 Workflow Logging
 
-- [ ] 每个 workflow node 开始时记录 step name。
-- [ ] 每个 workflow node 结束时保存 output。
-- [ ] 每个 LLM 调用保存 prompt version。
-- [ ] 每个异常保存 error record。
-- [ ] 在 Streamlit 显示 run_id。
-- [ ] 在 Streamlit 显示每步状态。
+- [x] 每个 workflow node 开始时记录 step name。
+- [x] 每个 workflow node 结束时保存 output。
+- [x] 每个 LLM 调用保存 prompt version。
+- [x] 每个异常保存 error record。
+- [x] 在 Streamlit 显示 run_id。
+- [x] 在 Streamlit 显示每步状态。
 - [ ] 提交 commit：`feat: add workflow run logging`。
 
 ##### 6.5 Run Detail UI
