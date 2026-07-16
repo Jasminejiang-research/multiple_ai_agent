@@ -8,7 +8,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from storage.models import ErrorRecord, NodeOutput, RunRecord, utc_now
+from storage.models import AgentOutput, ErrorRecord, NodeOutput, RunRecord, utc_now
 
 
 def create_run(
@@ -74,6 +74,28 @@ def save_node_output(
     return node_output
 
 
+def save_agent_output(
+    session: Session,
+    *,
+    run_id: str,
+    agent_name: str,
+    output_type: str | None,
+    output_payload: dict[str, Any],
+) -> AgentOutput:
+    """Persist one schema-validated output produced by a named agent."""
+    _require_run(session, run_id)
+    agent_output = AgentOutput(
+        run_id=run_id,
+        agent_name=agent_name,
+        output_type=output_type,
+        output_payload=output_payload,
+    )
+    session.add(agent_output)
+    session.flush()
+    session.refresh(agent_output)
+    return agent_output
+
+
 def save_error(
     session: Session,
     *,
@@ -103,7 +125,11 @@ def get_run(session: Session, run_id: str) -> RunRecord | None:
     statement = (
         select(RunRecord)
         .where(RunRecord.run_id == run_id)
-        .options(selectinload(RunRecord.node_outputs), selectinload(RunRecord.errors))
+        .options(
+            selectinload(RunRecord.node_outputs),
+            selectinload(RunRecord.agent_outputs),
+            selectinload(RunRecord.errors),
+        )
     )
     return session.scalar(statement)
 

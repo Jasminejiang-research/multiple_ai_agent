@@ -11,6 +11,7 @@ from storage.repositories import (
     create_run,
     get_run,
     list_runs,
+    save_agent_output,
     save_error,
     save_node_output,
     update_run_status,
@@ -76,6 +77,25 @@ def test_save_node_output(session: Session) -> None:
     assert fetched is not None
     assert len(fetched.node_outputs) == 1
     assert fetched.node_outputs[0].output_snapshot == {"outline": "sample outline"}
+
+
+def test_save_agent_output(session: Session) -> None:
+    """save_agent_output should attach a structured agent result to a run."""
+    create_run(session, run_id="run-agent-001")
+
+    agent_output = save_agent_output(
+        session,
+        run_id="run-agent-001",
+        agent_name="Research Agent",
+        output_type="ResearchAnalysis",
+        output_payload={"analysis_summary": "Sample structured research output."},
+    )
+    fetched = get_run(session, "run-agent-001")
+
+    assert agent_output.output_type == "ResearchAnalysis"
+    assert fetched is not None
+    assert len(fetched.agent_outputs) == 1
+    assert fetched.agent_outputs[0].agent_name == "Research Agent"
 
 
 def test_save_error(session: Session) -> None:

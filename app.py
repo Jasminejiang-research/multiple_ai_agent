@@ -18,11 +18,14 @@ from storage.db import Base, engine, get_session
 from storage.repositories import create_run, get_run, list_runs, update_run_status
 from workflow.graph import build_proposal_workflow_graph
 from workflow.logging import (
+    MULTI_AGENT_PROMPT_VERSION,
+    MULTI_AGENT_VERSION,
     PROMPT_VERSION,
-    WORKFLOW_STEP_NAMES,
     WORKFLOW_VERSION,
+    step_names_for_workflow,
     summarize_step_statuses,
 )
+from workflow.multi_agent_graph import build_multi_agent_workflow_graph
 
 ROOT_DIR = Path(__file__).resolve().parent
 PROMPT_PATH = ROOT_DIR / "prompts" / "single_agent_proposal.md"
@@ -364,15 +367,16 @@ def build_run_detail(run: Any) -> RunDetail:
             output_preview=_json_preview(output),
         )
 
+    step_names = step_names_for_workflow(run.workflow_version)
     ordered_steps = [
         latest_by_step[step_name]
-        for step_name in WORKFLOW_STEP_NAMES
+        for step_name in step_names
         if step_name in latest_by_step
     ]
     extra_steps = [
         preview
         for step_name, preview in latest_by_step.items()
-        if step_name not in WORKFLOW_STEP_NAMES
+        if step_name not in step_names
     ]
     error_messages = [
         f"{error.step_name or 'workflow'}: {error.error_type}: {error.error_message}"
@@ -437,6 +441,44 @@ def run_workflow_pipeline(user_brief: dict[str, str]) -> WorkflowPipelineResult:
     if not markdown:
         _set_run_status(run_id, "failed")
         raise ValueError("Workflow finished without producing a Markdown proposal.")
+
+    _set_run_status(run_id, "completed")
+    return WorkflowPipelineResult(
+        output_path=Path(result["output_path"]),
+        markdown=markdown,
+        run_id=run_id,
+        step_statuses=_get_step_statuses(run_id),
+    )
+
+
+def run_multi_agent_pipeline(user_brief: dict[str, str]) -> WorkflowPipelineResult:
+    """Run and persist the controlled Supervisor-led multi-agent workflow."""
+    _ensure_run_history_tables()
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+    with get_session() as session:
+        create_run(
+            session,
+            run_id=run_id,
+            session_id="streamlit",
+            workflow_version=MULTI_AGENT_VERSION,
+            prompt_version=MULTI_AGENT_PROMPT_VERSION,
+            model_name=MODEL_NAME,
+            input_brief=user_brief,
+        )
+        update_run_status(session, run_id, "running")
+        session.commit()
+
+    graph = build_multi_agent_workflow_graph(logging_session_factory=get_session)
+    result = graph.invoke({"run_id": run_id, "user_brief": user_brief})
+
+    if result.get("missing_info"):
+        _set_run_status(run_id, "needs_input")
+        raise ValueError("Input incomplete: " + "; ".join(result["missing_info"]))
+
+    markdown = result.get("final_markdown") or result.get("markdown")
+    if not markdown:
+        _set_run_status(run_id, "failed")
+        raise ValueError("Multi-agent workflow finished without a Markdown proposal.")
 
     _set_run_status(run_id, "completed")
     return WorkflowPipelineResult(
@@ -568,18 +610,20 @@ def run_streamlit_app() -> None:
     )
 
     st.title("Open Proposal Agent")
-    st.caption("Phase 1 · Single-Agent Baseline · Investor-Grade Business Proposals")
+    st.caption("Baseline · Deterministic Workflow · Controlled Multi-Agent")
 
     with st.sidebar:
         st.header("Business Idea Input")
         run_mode = st.radio(
             "Run Mode",
-            ["Baseline", "Workflow"],
+            ["Baseline", "Workflow", "Multi-Agent"],
             index=0,
             help=(
                 "Baseline: single-agent prompt. "
                 "Workflow: deterministic LangGraph pipeline "
-                "(validate → plan → write → assemble → critique → revise → export)."
+                "(validate → plan → write → assemble → critique → revise → export). "
+                "Multi-Agent: Supervisor → Research → Strategy → Finance → "
+                "Writer → Critic → Revision."
             ),
         )
         company_name = st.text_input("Company Name", placeholder="e.g. MediQuick AI")
@@ -624,7 +668,7 @@ def run_streamlit_app() -> None:
             st.error(f"Please fill in all fields. Missing: {', '.join(missing)}")
         else:
             try:
-                if run_mode == "Workflow":
+                if run_mode in {"Workflow", "Multi-Agent"}:
                     user_brief = build_user_brief(
                         company_name=company_name.strip(),
                         industry=industry.strip(),
@@ -635,8 +679,20 @@ def run_streamlit_app() -> None:
                         geography=geography.strip(),
                         proposal_goal=proposal_goal.strip(),
                     )
-                    with st.spinner("Running deterministic workflow… This may take 30–90 seconds."):
-                        workflow_result = run_workflow_pipeline(user_brief)
+                    if run_mode == "Multi-Agent":
+                        spinner_text = (
+                            "Running controlled multi-agent workflow… "
+                            "This may take 60–180 seconds."
+                        )
+                        pipeline = run_multi_agent_pipeline
+                    else:
+                        spinner_text = (
+                            "Running deterministic workflow… "
+                            "This may take 30–90 seconds."
+                        )
+                        pipeline = run_workflow_pipeline
+                    with st.spinner(spinner_text):
+                        workflow_result = pipeline(user_brief)
                     st.session_state.pop("proposal", None)
                     st.session_state["markdown"] = workflow_result.markdown
                     st.session_state["output_path"] = str(workflow_result.output_path)

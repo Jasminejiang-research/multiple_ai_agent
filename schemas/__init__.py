@@ -1,3 +1,15 @@
+from schemas.agent_outputs import (
+    FinanceAssumption,
+    FinanceAssumptions,
+    ResearchAnalysis,
+    ResearchFinding,
+    StrategyAnalysis,
+    StrategyInsight,
+    SupervisorPlan,
+    SupervisorTask,
+    UnsupportedClaim,
+    WriterInput,
+)
 from schemas.proposal_schema import BusinessProposal
 from schemas.workflow import (
     CritiqueIssue,
@@ -15,11 +27,21 @@ __all__ = [
     "BusinessProposal",
     "CritiqueIssue",
     "CritiqueReport",
+    "FinanceAssumption",
+    "FinanceAssumptions",
     "ProposalDraft",
     "ProposalOutline",
     "ProposalOutlineSection",
     "ProposalSection",
+    "ResearchAnalysis",
+    "ResearchFinding",
     "RevisedProposal",
     "SectionDraft",
     "SectionDrafts",
+    "StrategyAnalysis",
+    "StrategyInsight",
+    "SupervisorPlan",
+    "SupervisorTask",
+    "UnsupportedClaim",
+    "WriterInput",
 ]
