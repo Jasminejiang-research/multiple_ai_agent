@@ -11,11 +11,18 @@ from typing import Any, TypeAlias
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from storage.repositories import save_error, save_node_output, update_run_status
+from storage.repositories import (
+    save_agent_output,
+    save_error,
+    save_node_output,
+    update_run_status,
+)
 from workflow.state import WorkflowState
 
 WORKFLOW_VERSION = "workflow-v1"
 PROMPT_VERSION = "phase2-prompts-v1"
+MULTI_AGENT_VERSION = "multi-agent-v1"
+MULTI_AGENT_PROMPT_VERSION = "phase3-agent-prompts-v1"
 WORKFLOW_STEP_NAMES: tuple[str, ...] = (
     "input_validator",
     "proposal_planner",
@@ -25,11 +32,28 @@ WORKFLOW_STEP_NAMES: tuple[str, ...] = (
     "revision",
     "export",
 )
+MULTI_AGENT_STEP_NAMES: tuple[str, ...] = (
+    "input_validator",
+    "supervisor",
+    "research",
+    "strategy",
+    "finance",
+    "writer",
+    "critic",
+    "revision",
+    "export",
+)
 LLM_PROMPT_VERSION_BY_STEP: dict[str, str] = {
     "proposal_planner": PROMPT_VERSION,
     "section_writer": PROMPT_VERSION,
     "basic_critic": PROMPT_VERSION,
     "revision": PROMPT_VERSION,
+    "supervisor": MULTI_AGENT_PROMPT_VERSION,
+    "research": MULTI_AGENT_PROMPT_VERSION,
+    "strategy": MULTI_AGENT_PROMPT_VERSION,
+    "finance": MULTI_AGENT_PROMPT_VERSION,
+    "writer": MULTI_AGENT_PROMPT_VERSION,
+    "critic": MULTI_AGENT_PROMPT_VERSION,
 }
 
 SessionFactory: TypeAlias = Callable[[], AbstractContextManager[Session]]
@@ -117,6 +141,42 @@ def with_workflow_logging(
     return logged_node
 
 
+def with_agent_output_persistence(
+    node: WorkflowNode,
+    *,
+    agent_name: str,
+    output_type: str,
+    output_field: str,
+    session_factory: SessionFactory | None,
+) -> WorkflowNode:
+    """Wrap an agent node and persist its validated state output."""
+
+    def persisted_node(state: WorkflowState) -> WorkflowState:
+        output = node(state)
+        run_id = state.get("run_id")
+        payload = output.get(output_field)
+        if session_factory is not None and run_id and isinstance(payload, dict):
+            with session_factory() as session:
+                save_agent_output(
+                    session,
+                    run_id=run_id,
+                    agent_name=agent_name,
+                    output_type=output_type,
+                    output_payload=serialize_for_log(payload),
+                )
+                session.commit()
+        return output
+
+    return persisted_node
+
+
+def step_names_for_workflow(workflow_version: str | None) -> tuple[str, ...]:
+    """Return the display order for a persisted workflow version."""
+    if workflow_version == MULTI_AGENT_VERSION:
+        return MULTI_AGENT_STEP_NAMES
+    return WORKFLOW_STEP_NAMES
+
+
 def summarize_step_statuses(run: Any) -> list[dict[str, str]]:
     """Return latest logged status for each workflow step in graph order."""
     latest_by_step: dict[str, dict[str, str]] = {}
@@ -132,8 +192,9 @@ def summarize_step_statuses(run: Any) -> list[dict[str, str]]:
             "prompt_version": str(snapshot.get("prompt_version", "")),
         }
 
+    step_names = step_names_for_workflow(getattr(run, "workflow_version", None))
     return [
         latest_by_step[step_name]
-        for step_name in WORKFLOW_STEP_NAMES
+        for step_name in step_names
         if step_name in latest_by_step
     ]
