@@ -945,12 +945,12 @@
 
 ##### 8.1 Knowledge Base Folders
 
-- [ ] 创建 `knowledge_base/proposal_templates/`。
-- [ ] 创建 `knowledge_base/business_frameworks/`。
-- [ ] 创建 `knowledge_base/example_proposals/`。
-- [ ] 创建 `knowledge_base/industry_research/`。
-- [ ] 每个文件夹添加 `.gitkeep`。
-- [ ] README 说明每个文件夹用途。
+- [x] 创建 `knowledge_base/proposal_templates/`。
+- [x] 创建 `knowledge_base/business_frameworks/`。
+- [x] 创建 `knowledge_base/example_proposals/`。
+- [x] 创建 `knowledge_base/industry_research/`。
+- [x] 每个文件夹添加 `.gitkeep`。
+- [x] README 说明每个文件夹用途。
 - [ ] 提交 commit：`chore: add knowledge base folders`。
 
 
