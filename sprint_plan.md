@@ -1011,12 +1011,12 @@
 
 ##### 8.6 Evidence Filter
 
-- [ ] 实现 `filter_evidence(chunks, min_score)`。
-- [ ] 过滤空内容。
-- [ ] 过滤低分结果。
-- [ ] 过滤重复 chunk。
-- [ ] 保留 source metadata。
-- [ ] 写测试。
+- [x] 实现 `filter_evidence(chunks, min_score)`。
+- [x] 过滤空内容。
+- [x] 过滤低分结果。
+- [x] 过滤重复 chunk。
+- [x] 保留 source metadata。
+- [x] 写测试。
 - [ ] 提交 commit：`feat: add evidence filter`。
 
 
