@@ -3,24 +3,17 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any, Protocol
 
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
 from pydantic import ValidationError
 
 from agents.base import AgentLogHook, BaseAgent
 from schemas.agent_outputs import ResearchAnalysis
-from workflow.gemini_schema import relaxed_response_schema
+from workflow.llm_client import StructuredJsonLLM, create_default_llm_client
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 RESEARCH_PROMPT_PATH = ROOT_DIR / "prompts" / "research_agent.md"
-MODEL_NAME = "gemini-2.5-flash"
-
-_RESEARCH_SCHEMA = relaxed_response_schema(ResearchAnalysis)
 
 
 class ResearchLLM(Protocol):
@@ -30,40 +23,11 @@ class ResearchLLM(Protocol):
         """Generate a JSON response for the provided prompt."""
 
 
-class GeminiResearchLLM:
-    """Gemini-backed JSON generator for the Research Agent."""
-
-    def __init__(self, api_key: str, model_name: str = MODEL_NAME) -> None:
-        """Initialize the Gemini client with an API key and model name."""
-        self._client = genai.Client(api_key=api_key)
-        self._model_name = model_name
-
-    def generate_json(self, prompt: str) -> str:
-        """Return JSON text matching the ``ResearchAnalysis`` schema."""
-        response = self._client.models.generate_content(
-            model=self._model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=_RESEARCH_SCHEMA,
-                temperature=0.2,
-            ),
-        )
-
-        if not response.text:
-            raise ValueError("Gemini returned an empty research response.")
-
-        return ResearchAnalysis.model_validate_json(response.text).model_dump_json()
-
-
-def create_default_research_llm() -> GeminiResearchLLM:
+def create_default_research_llm() -> ResearchLLM:
     """Create the default production LLM adapter for the Research Agent."""
-    load_dotenv()
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY is not set in the environment.")
-    model_name = os.getenv("DEFAULT_MODEL", MODEL_NAME)
-    return GeminiResearchLLM(api_key=api_key, model_name=model_name)
+    return StructuredJsonLLM(
+        create_default_llm_client(), ResearchAnalysis, temperature=0.2
+    )
 
 
 def load_research_prompt() -> str:

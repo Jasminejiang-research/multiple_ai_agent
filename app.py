@@ -10,10 +10,9 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
 
 from schemas.proposal_schema import BusinessProposal
+from workflow.llm_client import LLMClient
 from storage.db import Base, engine, get_session
 from storage.repositories import create_run, get_run, list_runs, update_run_status
 from workflow.graph import build_proposal_workflow_graph
@@ -90,32 +89,18 @@ def load_system_instruction() -> str:
     return PROMPT_PATH.read_text(encoding="utf-8")
 
 
-def create_client() -> genai.Client:
-    return genai.Client(api_key=load_api_key())
+def create_client() -> LLMClient:
+    return LLMClient(api_key=load_api_key(), model_name=MODEL_NAME)
 
 
-def generate_proposal(client: genai.Client, user_idea: str) -> BusinessProposal:
-    """Call Gemini with structured output constrained to BusinessProposal."""
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=user_idea,
-        config=types.GenerateContentConfig(
-            system_instruction=load_system_instruction(),
-            response_mime_type="application/json",
-            response_schema=BusinessProposal,
-            temperature=0.4,
-        ),
+def generate_proposal(client: LLMClient, user_idea: str) -> BusinessProposal:
+    """Call the shared LLM client with output constrained to BusinessProposal."""
+    return client.generate_structured(
+        user_idea,
+        BusinessProposal,
+        temperature=0.4,
+        system_instruction=load_system_instruction(),
     )
-
-    if response.parsed is not None:
-        if isinstance(response.parsed, BusinessProposal):
-            return response.parsed
-        return BusinessProposal.model_validate(response.parsed)
-
-    if not response.text:
-        raise ValueError("Gemini returned an empty response.")
-
-    return BusinessProposal.model_validate_json(response.text)
 
 
 def proposal_to_markdown(proposal: BusinessProposal) -> str:

@@ -3,24 +3,17 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any, Protocol
 
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
 from pydantic import ValidationError
 
 from agents.base import AgentLogHook, BaseAgent
 from schemas.agent_outputs import StrategyAnalysis
-from workflow.gemini_schema import relaxed_response_schema
+from workflow.llm_client import StructuredJsonLLM, create_default_llm_client
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 STRATEGY_PROMPT_PATH = ROOT_DIR / "prompts" / "strategy_agent.md"
-MODEL_NAME = "gemini-2.5-flash"
-
-_STRATEGY_SCHEMA = relaxed_response_schema(StrategyAnalysis)
 
 
 class StrategyLLM(Protocol):
@@ -30,40 +23,11 @@ class StrategyLLM(Protocol):
         """Generate a JSON response for the provided prompt."""
 
 
-class GeminiStrategyLLM:
-    """Gemini-backed JSON generator for the Strategy Agent."""
-
-    def __init__(self, api_key: str, model_name: str = MODEL_NAME) -> None:
-        """Initialize the Gemini client with an API key and model name."""
-        self._client = genai.Client(api_key=api_key)
-        self._model_name = model_name
-
-    def generate_json(self, prompt: str) -> str:
-        """Return JSON text matching the ``StrategyAnalysis`` schema."""
-        response = self._client.models.generate_content(
-            model=self._model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=_STRATEGY_SCHEMA,
-                temperature=0.2,
-            ),
-        )
-
-        if not response.text:
-            raise ValueError("Gemini returned an empty strategy response.")
-
-        return StrategyAnalysis.model_validate_json(response.text).model_dump_json()
-
-
-def create_default_strategy_llm() -> GeminiStrategyLLM:
+def create_default_strategy_llm() -> StrategyLLM:
     """Create the default production LLM adapter for the Strategy Agent."""
-    load_dotenv()
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY is not set in the environment.")
-    model_name = os.getenv("DEFAULT_MODEL", MODEL_NAME)
-    return GeminiStrategyLLM(api_key=api_key, model_name=model_name)
+    return StructuredJsonLLM(
+        create_default_llm_client(), StrategyAnalysis, temperature=0.2
+    )
 
 
 def load_strategy_prompt() -> str:

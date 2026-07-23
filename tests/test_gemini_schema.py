@@ -14,14 +14,40 @@ from typing import Any
 
 import pytest
 
-from schemas.workflow import CritiqueReport, ProposalOutline, RevisedProposal, SectionDrafts
+from schemas.agent_outputs import (
+    FinanceAssumptions,
+    ResearchAnalysis,
+    StrategyAnalysis,
+    SupervisorPlan,
+)
+from schemas.workflow import (
+    CritiqueReport,
+    ProposalDraft,
+    ProposalOutline,
+    RevisedProposal,
+    SectionDrafts,
+)
 from workflow.gemini_schema import (
     _CONSTRAINT_KEYS,
     _is_expensive_enum,
     relaxed_response_schema,
 )
 
-WORKFLOW_MODELS = (ProposalOutline, SectionDrafts, CritiqueReport, RevisedProposal)
+# Every Pydantic model sent to Gemini as a response_schema, across the
+# deterministic workflow (Phase 2) and the multi-agent mode (Phase 3). The
+# Phase 3 models use ``extra="forbid"`` and therefore emit
+# ``additionalProperties``, which Gemini rejects with a 400 unless stripped.
+WORKFLOW_MODELS = (
+    ProposalOutline,
+    SectionDrafts,
+    CritiqueReport,
+    RevisedProposal,
+    SupervisorPlan,
+    ResearchAnalysis,
+    StrategyAnalysis,
+    FinanceAssumptions,
+    ProposalDraft,
+)
 
 
 def _iter_keys(node: Any):
@@ -55,6 +81,19 @@ def test_relaxed_schema_has_no_constraint_keys(model: type) -> None:
     keys = set(_iter_keys(schema))
     offending = keys & _CONSTRAINT_KEYS
     assert not offending, f"{model.__name__} leaked constraint keys: {sorted(offending)}"
+
+
+@pytest.mark.parametrize("model", WORKFLOW_MODELS)
+def test_relaxed_schema_has_no_additional_properties(model: type) -> None:
+    """Regression: ``extra="forbid"`` models must not leak additionalProperties.
+
+    Gemini rejects it with ``400 INVALID_ARGUMENT: Unknown name
+    "additional_properties"``, which broke the Phase 3 multi-agent run mode.
+    """
+    keys = set(_iter_keys(relaxed_response_schema(model)))
+    assert "additionalProperties" not in keys, (
+        f"{model.__name__} leaked additionalProperties into the Gemini schema"
+    )
 
 
 @pytest.mark.parametrize("model", WORKFLOW_MODELS)
@@ -118,6 +157,8 @@ def test_gemini_accepts_relaxed_schema(model: type) -> None:
     except errors.ServerError as exc:
         pytest.skip(f"Transient Gemini server error ({exc.code}); retry later.")
     except errors.ClientError as exc:
+        if exc.code == 429:
+            pytest.skip("Gemini quota exhausted (429); schema was not rejected.")
         pytest.fail(
             f"Gemini rejected the relaxed {model.__name__} schema: "
             f"{exc.code} {exc.message}"

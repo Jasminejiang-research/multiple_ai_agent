@@ -19,11 +19,15 @@ from typing import Any
 
 from pydantic import BaseModel
 
-# Keys that inflate the constrained-decoding state machine. They are all still
+# Keys that inflate the constrained-decoding state machine or that the Gemini
+# Schema proto does not know at all. ``additionalProperties`` is emitted by
+# Pydantic for every ``extra="forbid"`` model and triggers a 400
+# ``Unknown name "additional_properties"`` from the API. They are all still
 # enforced by Pydantic when the response text is validated after generation, so
 # stripping them here does not weaken output validation.
 _CONSTRAINT_KEYS: frozenset[str] = frozenset(
     {
+        "additionalProperties",
         "minLength",
         "maxLength",
         "pattern",
