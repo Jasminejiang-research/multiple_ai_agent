@@ -996,15 +996,15 @@
 
 ##### 8.5 Retriever
 
-- [ ] 创建 `rag/retriever.py`。
-- [ ] 实现 `rewrite_query(user_brief, section)`。
-- [ ] 实现 `retrieve(query, top_k)`。
-- [ ] 返回 EvidenceChunk。
-- [ ] EvidenceChunk 包含 source_id。
-- [ ] EvidenceChunk 包含 text。
-- [ ] EvidenceChunk 包含 score。
-- [ ] EvidenceChunk 包含 metadata。
-- [ ] 写测试：query 返回 chunk。
+- [x] 创建 `rag/retriever.py`。
+- [x] 实现 `rewrite_query(user_brief, section)`。
+- [x] 实现 `retrieve(query, top_k)`。
+- [x] 返回 EvidenceChunk。
+- [x] EvidenceChunk 包含 source_id。
+- [x] EvidenceChunk 包含 text。
+- [x] EvidenceChunk 包含 score。
+- [x] EvidenceChunk 包含 metadata。
+- [x] 写测试：query 返回 chunk。
 - [ ] 提交 commit：`feat: add RAG retriever`。
 
 
