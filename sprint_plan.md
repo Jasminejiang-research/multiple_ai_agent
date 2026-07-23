@@ -1023,14 +1023,14 @@
 
 ##### 8.7 Citation Checker
 
-- [ ] 创建 `rag/citation_checker.py`。
-- [ ] 实现 `extract_key_claims(proposal_section)`。
-- [ ] 实现 `check_claim_has_source(claim, source_ids)`。
-- [ ] 对 market size claim 强制要求 source。
-- [ ] 对 competitor claim 强制要求 source。
-- [ ] 对 trend claim 强制要求 source。
-- [ ] 输出 citation coverage score。
-- [ ] 写测试。
+- [x] 创建 `rag/citation_checker.py`。
+- [x] 实现 `extract_key_claims(proposal_section)`。
+- [x] 实现 `check_claim_has_source(claim, source_ids)`。
+- [x] 对 market size claim 强制要求 source。
+- [x] 对 competitor claim 强制要求 source。
+- [x] 对 trend claim 强制要求 source。
+- [x] 输出 citation coverage score。
+- [x] 写测试。
 - [ ] 提交 commit：`feat: add citation checker`。
 
 
