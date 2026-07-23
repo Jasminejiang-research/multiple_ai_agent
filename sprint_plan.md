@@ -983,13 +983,13 @@
 
 ##### 8.4 Vector Index
 
-- [ ] 添加 Chroma 依赖。
-- [ ] 创建 `rag/index.py`。
-- [ ] 实现 `build_index()`。
-- [ ] 实现 `add_documents()`。
-- [ ] 实现 `persist_index()`。
-- [ ] 实现 `load_index()`。
-- [ ] 写测试：index 可创建。
+- [x] 添加 Chroma 依赖。
+- [x] 创建 `rag/index.py`。
+- [x] 实现 `build_index()`。
+- [x] 实现 `add_documents()`。
+- [x] 实现 `persist_index()`。
+- [x] 实现 `load_index()`。
+- [x] 写测试：index 可创建。
 - [ ] 提交 commit：`feat: add vector index`。
 
 
