@@ -957,26 +957,26 @@
 
 ##### 8.2 Seed Documents
 
-- [ ] 添加 1 个 investor proposal template Markdown。
-- [ ] 添加 1 个 consulting memo template Markdown。
-- [ ] 添加 1 个 grant proposal template Markdown。
-- [ ] 添加 SWOT framework Markdown。
-- [ ] 添加 Porter Five Forces framework Markdown。
-- [ ] 添加 TAM/SAM/SOM framework Markdown。
-- [ ] 添加 AARRR framework Markdown。
-- [ ] 添加 unit economics framework Markdown。
+- [x] 添加 1 个 investor proposal template Markdown。
+- [x] 添加 1 个 consulting memo template Markdown。
+- [x] 添加 1 个 grant proposal template Markdown。
+- [x] 添加 SWOT framework Markdown。
+- [x] 添加 Porter Five Forces framework Markdown。
+- [x] 添加 TAM/SAM/SOM framework Markdown。
+- [x] 添加 AARRR framework Markdown。
+- [x] 添加 unit economics framework Markdown。
 - [ ] 提交 commit：`docs: add seed knowledge base documents`。
 
 
 
 ##### 8.3 Document Loaders
 
-- [ ] 创建 `rag/loaders.py`。
-- [ ] 实现 Markdown loader。
-- [ ] 实现 TXT loader。
-- [ ] 预留 PDF loader。
-- [ ] 每个 loaded document 保存 source metadata。
-- [ ] 写测试加载 Markdown。
+- [x] 创建 `rag/loaders.py`。
+- [x] 实现 Markdown loader。
+- [x] 实现 TXT loader。
+- [x] 预留 PDF loader。
+- [x] 每个 loaded document 保存 source metadata。
+- [x] 写测试加载 Markdown。
 - [ ] 提交 commit：`feat: add document loaders`。
 
 
