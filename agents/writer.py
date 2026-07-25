@@ -74,10 +74,11 @@ def validate_proposal_source_ids(
     proposal: ProposalDraft,
     writer_input: WriterInput,
 ) -> None:
-    """Reject source IDs that do not exist in the supplied RAG evidence."""
+    """Reject source IDs absent from the supplied RAG and web evidence."""
     allowed_source_ids = {
         chunk.source_id for chunk in writer_input.evidence_chunks
     }
+    allowed_source_ids.update(source.source_id for source in writer_input.web_sources)
     for field_name in PROPOSAL_SECTION_FIELD_NAMES:
         section = getattr(proposal, field_name)
         unknown_source_ids = sorted(set(section.source_ids) - allowed_source_ids)

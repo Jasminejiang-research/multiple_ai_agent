@@ -302,6 +302,7 @@ def test_multi_agent_graph_runs_all_agents_and_persists_outputs() -> None:
             "Competitor Agent",
         }
         assert "tam-framework-001" in llms["writer"].prompts[0]
+        assert "https://example.com/market" in llms["writer"].prompts[0]
         assert "https://example.com/market" in llms["research"].prompts[0]
         assert "https://example.com/competitor" in llms["research"].prompts[0]
 

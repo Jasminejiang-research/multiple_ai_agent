@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timezone
 
 from agents.base import AgentLogEvent
 from agents.writer import WriterAgent, build_writer_prompt
@@ -79,6 +80,22 @@ def _writer_input() -> WriterInput:
             unsupported_financial_claims=[],
             needs_human_review=["Validate pricing and delivery costs."],
         ),
+        web_sources=[
+            {
+                "source_id": "web-market-research",
+                "agent_name": "Market Research Agent",
+                "query": "AI education market research",
+                "retrieved_at": datetime(2026, 7, 25, tzinfo=timezone.utc),
+                "title": "AI Education Market Report",
+                "url": "https://example.com/ai-education-market",
+                "publisher": "Example Research",
+                "published_date": "2026-07-01",
+                "summary": "Recent market evidence for AI-assisted education.",
+                "relevance_score": 0.9,
+                "source_quality": "research_org",
+                "stale": False,
+            }
+        ],
         evidence_chunks=[
             EvidenceChunk(
                 source_id="framework-unit-economics",
@@ -171,7 +188,9 @@ class WriterAgentTests(unittest.TestCase):
         self.assertIn('"research_analysis"', prompt)
         self.assertIn('"strategy_analysis"', prompt)
         self.assertIn('"finance_assumptions"', prompt)
+        self.assertIn('"web_sources"', prompt)
         self.assertIn('"evidence_chunks"', prompt)
+        self.assertIn("web-market-research", prompt)
         self.assertIn("framework-unit-economics", prompt)
         self.assertIn("Do not add facts", prompt)
         self.assertIn("exact source marker `[source_id]`", prompt)
@@ -220,6 +239,27 @@ class WriterAgentTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "unknown source IDs"):
             agent.run(_writer_input())
+
+    def test_writer_accepts_source_id_from_controlled_web_sources(self) -> None:
+        """A web source passed through WriterInput belongs to the citation allowlist."""
+        proposal_data = ProposalDraft.model_validate_json(_proposal_json()).model_dump()
+        proposal_data["executive_summary"].update(
+            content=(
+                "The supplied market research supports the opportunity framing "
+                "[web-market-research] while uncertainty remains explicit."
+            ),
+            key_claims=[
+                "Market evidence supports the opportunity [web-market-research]."
+            ],
+            source_ids=["web-market-research"],
+        )
+        llm = FakeWriterLLM(
+            ProposalDraft.model_validate(proposal_data).model_dump_json()
+        )
+
+        proposal = WriterAgent(llm_client=llm).run(_writer_input())
+
+        self.assertIn("web-market-research", proposal.global_source_ids)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rag.retriever import EvidenceChunk
+from schemas.source import SourceRecord
 
 
 AgentRole = Literal["research", "strategy", "finance", "writer", "critic"]
@@ -483,13 +484,20 @@ class FinanceAssumptions(BaseModel):
 
 
 class WriterInput(BaseModel):
-    """Validated analysis packets and RAG evidence consumed by the Writer."""
+    """Validated analysis packets plus RAG and web evidence consumed by the Writer."""
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     research_analysis: ResearchAnalysis
     strategy_analysis: StrategyAnalysis
     finance_assumptions: FinanceAssumptions
+    web_sources: Annotated[
+        list[SourceRecord],
+        Field(
+            default_factory=list,
+            description="Controlled web sources available for proposal claims.",
+        ),
+    ]
     evidence_chunks: Annotated[
         list[EvidenceChunk],
         Field(

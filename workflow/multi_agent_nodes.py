@@ -170,6 +170,7 @@ def writer_agent_node(
         "research_analysis": state.get("research_analysis"),
         "strategy_analysis": state.get("strategy_analysis"),
         "finance_assumptions": state.get("finance_assumptions"),
+        "web_sources": state.get("web_sources", []),
         "evidence_chunks": state.get("evidence_chunks"),
     }
     proposal = agent.run(writer_input)
