@@ -7,6 +7,7 @@ from tools.tavily_search import (
     WebSearchRateLimitError,
 )
 from tools.source_quality import classify_source_quality
+from tools.recency import mark_stale_sources, parse_recency
 from tools.web_search import search_web
 
 __all__ = [
@@ -15,5 +16,7 @@ __all__ = [
     "WebSearchProviderError",
     "WebSearchRateLimitError",
     "classify_source_quality",
+    "mark_stale_sources",
+    "parse_recency",
     "search_web",
 ]

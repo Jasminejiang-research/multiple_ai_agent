@@ -25,6 +25,9 @@ You will receive one JSON object containing:
 - For every factual claim derived from evidence, include the exact source marker `[source_id]` in both the prose sentence and its matching `key_claims` item.
 - Add each source actually cited by a section to that section's `source_ids`; use only IDs present in `evidence_chunks`.
 - Leave `source_ids` empty when a section makes no evidence-derived factual claim.
+- When cited evidence has `metadata.stale` set to `true`, explicitly identify it
+  as an outdated source and state its publication date in the proposal; do not
+  present stale material as current.
 - Present explicitly labeled assumptions and hypotheses as uncertain.
 - Set a section's `confidence` to `low` whenever its important content depends on low-confidence inputs, unsupported claims, missing evidence, or human review.
 

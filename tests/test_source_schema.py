@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from pydantic import ValidationError
 
@@ -44,6 +46,7 @@ def test_web_search_result_accepts_and_normalizes_all_fields() -> None:
         "summary": "Audited annual results.",
         "relevance_score": 0.82,
         "source_quality": "financial_report",
+        "stale": False,
     }
 
 
@@ -59,6 +62,40 @@ def test_web_search_result_supports_missing_source_metadata() -> None:
     assert result.publisher is None
     assert result.published_date is None
     assert result.source_quality is SourceQuality.UNKNOWN
+    assert result.stale is False
+
+
+def test_web_search_result_parses_human_and_iso_datetimes() -> None:
+    """Provider publication dates are normalized to calendar dates."""
+    human_date = WebSearchResult(
+        title="Research note",
+        url="https://example.com/research",
+        published_date="July 24, 2026",
+        summary="Relevant source summary.",
+        relevance_score=0.5,
+    )
+    iso_datetime = WebSearchResult(
+        title="News item",
+        url="https://example.com/news",
+        published_date="2026-07-24T18:30:00Z",
+        summary="Relevant source summary.",
+        relevance_score=0.5,
+    )
+
+    assert human_date.published_date == date(2026, 7, 24)
+    assert iso_datetime.published_date == date(2026, 7, 24)
+
+
+def test_web_search_result_rejects_unparseable_published_date() -> None:
+    """Invalid provider dates must not silently become misleading metadata."""
+    with pytest.raises(ValidationError, match="recognizable calendar date"):
+        WebSearchResult(
+            title="Research note",
+            url="https://example.com/research",
+            published_date="not a date",
+            summary="Relevant source summary.",
+            relevance_score=0.5,
+        )
 
 
 @pytest.mark.parametrize("score", [-0.01, 1.01])

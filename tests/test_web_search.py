@@ -125,12 +125,44 @@ def test_search_web_records_query_and_utc_timestamp(
     assert logged_at.utcoffset() is not None
 
 
+def test_search_web_keeps_and_marks_stale_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Local recency enforcement annotates old results without dropping them."""
+    monkeypatch.setattr(
+        web_search,
+        "_search_provider",
+        lambda *args: [
+            {
+                "title": "Historical report",
+                "url": "https://example.com/historical",
+                "published_date": "2000-01-01",
+                "summary": "Older but still relevant background.",
+                "relevance_score": 0.75,
+            },
+            {
+                "title": "Future-dated report",
+                "url": "https://example.com/current",
+                "published_date": "2999-01-01",
+                "summary": "A result inside the requested date window.",
+                "relevance_score": 0.7,
+            },
+        ],
+    )
+
+    results = web_search.search_web("market history", recency="last_12_months")
+
+    assert len(results) == 2
+    assert [result.stale for result in results] == [True, False]
+
+
 @pytest.mark.parametrize(
     ("kwargs", "error_type"),
     [
         ({"query": "  "}, ValueError),
         ({"query": "market", "allowed_domains": [""]}, ValueError),
         ({"query": "market", "recency": " "}, ValueError),
+        ({"query": "market", "recency": "whenever"}, ValueError),
         ({"query": "market", "max_results": 0}, ValueError),
     ],
 )
@@ -170,7 +202,7 @@ def test_tavily_client_normalizes_results_and_forwards_controls() -> None:
     results = client.search(
         "European AI market",
         ["research.example"],
-        "month",
+        "last_12_months",
         3,
     )
 
@@ -180,7 +212,7 @@ def test_tavily_client_normalizes_results_and_forwards_controls() -> None:
     assert isinstance(payload, dict)
     assert payload["api_key"] == "secret-key"
     assert payload["include_domains"] == ["research.example"]
-    assert payload["time_range"] == "month"
+    assert payload["time_range"] == "year"
     assert payload["max_results"] == 3
     assert results == [
         WebSearchResult(

@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from pydantic import ValidationError
 
 from schemas import WebSearchResult
+from tools.recency import to_tavily_time_range
 from tools.source_quality import classify_source_quality
 
 TAVILY_SEARCH_URL = "https://api.tavily.com/search"
@@ -90,7 +91,9 @@ class TavilySearchClient:
         if allowed_domains:
             payload["include_domains"] = allowed_domains
         if recency:
-            payload["time_range"] = recency
+            time_range = to_tavily_time_range(recency)
+            if time_range is not None:
+                payload["time_range"] = time_range
 
         try:
             response = self._http_client.post(

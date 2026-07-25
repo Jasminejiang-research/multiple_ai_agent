@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, TypeAlias
 
 from schemas import WebSearchResult
+from tools.recency import mark_stale_sources, parse_recency
 from tools.tavily_search import TavilySearchClient
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,7 @@ def search_web(
         recency = recency.strip()
         if not recency:
             raise ValueError("recency must not be blank.")
+        parse_recency(recency)
 
     if isinstance(max_results, bool) or not isinstance(max_results, int):
         raise TypeError("max_results must be an integer.")
@@ -105,7 +107,8 @@ def search_web(
         recency,
         max_results,
     )
-    return [
+    results = [
         WebSearchResult.model_validate(result)
         for result in raw_results[:max_results]
     ]
+    return mark_stale_sources(results, recency)

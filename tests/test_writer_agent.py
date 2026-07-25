@@ -89,6 +89,8 @@ def _writer_input() -> WriterInput:
                     "chunk_id": "unit-economics-1",
                     "quote": "Unit economics should state CAC, LTV, margin, and payback assumptions.",
                     "matched_sections": ["Financial Assumptions"],
+                    "published_date": "2020-01-01",
+                    "stale": True,
                 },
             )
         ],
@@ -174,6 +176,8 @@ class WriterAgentTests(unittest.TestCase):
         self.assertIn("Do not add facts", prompt)
         self.assertIn("exact source marker `[source_id]`", prompt)
         self.assertIn("confidence` to `low`", prompt)
+        self.assertIn("metadata.stale", prompt)
+        self.assertIn("state its publication date", prompt)
 
     def test_writer_agent_returns_validated_proposal_draft(self) -> None:
         """The Writer parses mock JSON into a logged, 13-section proposal."""

@@ -1140,12 +1140,12 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 
 ##### 9.5 Recency Filter
 
-- [ ] 实现 published_date 解析。
-- [ ] 允许设置 recency，例如 last_12_months。
-- [ ] 过时来源不删除，但标记 stale。
-- [ ] 在 proposal 中要求注明过时资料。
-- [ ] 写测试。
-- [ ] 提交 commit：`feat: add source recency filter`。
+- [x] 实现 published_date 解析。
+- [x] 允许设置 recency，例如 last_12_months。
+- [x] 过时来源不删除，但标记 stale。
+- [x] 在 proposal 中要求注明过时资料。
+- [x] 写测试。
+- [x] 提交 commit：`feat: add source recency filter`。
 
 
 
