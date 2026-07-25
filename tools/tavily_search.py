@@ -11,7 +11,8 @@ import requests
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
-from schemas import SourceQuality, WebSearchResult
+from schemas import WebSearchResult
+from tools.source_quality import classify_source_quality
 
 TAVILY_SEARCH_URL = "https://api.tavily.com/search"
 
@@ -170,6 +171,8 @@ class TavilySearchClient:
             ),
             summary=str(result.get("content") or result.get("summary") or ""),
             relevance_score=float(result.get("score", 0.0)),
-            # Source classification belongs to Sprint task 9.4.
-            source_quality=SourceQuality.UNKNOWN,
+            source_quality=classify_source_quality(
+                url,
+                str(publisher) if publisher else None,
+            ),
         )

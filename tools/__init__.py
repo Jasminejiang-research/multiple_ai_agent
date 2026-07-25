@@ -6,6 +6,7 @@ from tools.tavily_search import (
     WebSearchProviderError,
     WebSearchRateLimitError,
 )
+from tools.source_quality import classify_source_quality
 from tools.web_search import search_web
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "WebSearchConfigurationError",
     "WebSearchProviderError",
     "WebSearchRateLimitError",
+    "classify_source_quality",
     "search_web",
 ]

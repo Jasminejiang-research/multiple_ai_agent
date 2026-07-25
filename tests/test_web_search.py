@@ -190,7 +190,7 @@ def test_tavily_client_normalizes_results_and_forwards_controls() -> None:
             published_date="2026-07-01",
             summary="A concise provider result.",
             relevance_score=0.87,
-            source_quality=SourceQuality.UNKNOWN,
+            source_quality=SourceQuality.RESEARCH_ORG,
         )
     ]
 

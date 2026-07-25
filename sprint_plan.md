@@ -1127,14 +1127,14 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 
 ##### 9.4 Source Quality Ranking
 
-- [ ] 实现 `classify_source_quality(url, publisher)`。
-- [ ] 官方域名标记 official。
-- [ ] 财报或 SEC 文件标记 financial_report。
-- [ ] 大学或研究机构标记 research_org / academic。
-- [ ] 主流媒体标记 news。
-- [ ] 其他标记 blog 或 unknown。
-- [ ] 写测试覆盖 5 类来源。
-- [ ] 提交 commit：`feat: add source quality classifier`。
+- [x] 实现 `classify_source_quality(url, publisher)`。
+- [x] 官方域名标记 official。
+- [x] 财报或 SEC 文件标记 financial_report。
+- [x] 大学或研究机构标记 research_org / academic。
+- [x] 主流媒体标记 news。
+- [x] 其他标记 blog 或 unknown。
+- [x] 写测试覆盖 5 类来源。
+- [x] 提交 commit：`feat: add source quality classifier`。
 
 
 
