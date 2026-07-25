@@ -21,8 +21,8 @@ from workflow.state import WorkflowState
 
 WORKFLOW_VERSION = "workflow-v1"
 PROMPT_VERSION = "phase2-prompts-v1"
-MULTI_AGENT_VERSION = "multi-agent-v1"
-MULTI_AGENT_PROMPT_VERSION = "phase3-agent-prompts-v1"
+MULTI_AGENT_VERSION = "multi-agent-rag-v1"
+MULTI_AGENT_PROMPT_VERSION = "phase4-rag-agent-prompts-v1"
 WORKFLOW_STEP_NAMES: tuple[str, ...] = (
     "input_validator",
     "proposal_planner",
@@ -38,6 +38,7 @@ MULTI_AGENT_STEP_NAMES: tuple[str, ...] = (
     "research",
     "strategy",
     "finance",
+    "rag_retrieval",
     "writer",
     "critic",
     "revision",

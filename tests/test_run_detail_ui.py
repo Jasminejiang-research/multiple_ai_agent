@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app import build_run_detail
+from app import build_run_detail, summarize_evidence_sources
 from storage.db import Base
 from storage.repositories import create_run, get_run, save_error, save_node_output
 
@@ -31,6 +31,46 @@ def test_build_run_detail_includes_brief_nodes_errors_and_output_path() -> None:
     assert "current_step" in detail.node_outputs[0].output_preview
     assert detail.error_messages == ["export: ValueError: Export failed"]
     assert detail.final_output_path == "outputs/ai_tutor.md"
+    assert detail.sources == []
+
+
+def test_summarize_evidence_sources_merges_sections_for_ui() -> None:
+    """The UI should show one readable record per retrieved source."""
+    summaries = summarize_evidence_sources(
+        [
+            {
+                "source_id": "source-1",
+                "text": "Framework excerpt",
+                "score": 0.8,
+                "metadata": {
+                    "file_name": "framework.md",
+                    "matched_sections": ["Market Opportunity"],
+                },
+            },
+            {
+                "source_id": "source-1",
+                "text": "Another excerpt",
+                "score": 0.9,
+                "metadata": {
+                    "file_name": "framework.md",
+                    "matched_sections": ["Financial Assumptions"],
+                },
+            },
+        ]
+    )
+
+    assert summaries == [
+        {
+            "source_id": "source-1",
+            "file_name": "framework.md",
+            "score": 0.9,
+            "matched_sections": [
+                "Market Opportunity",
+                "Financial Assumptions",
+            ],
+            "quote": "Framework excerpt",
+        }
+    ]
 
 
 def _create_logged_run(session: Session) -> None:

@@ -23,6 +23,7 @@ class WorkflowState(TypedDict):
     research_analysis: NotRequired[dict[str, Any]]
     strategy_analysis: NotRequired[dict[str, Any]]
     finance_assumptions: NotRequired[dict[str, Any]]
+    evidence_chunks: NotRequired[list[dict[str, Any]]]
     proposal_outline: NotRequired[dict[str, Any]]
     section_drafts: NotRequired[dict[str, Any]]
     proposal_draft: NotRequired[dict[str, Any]]

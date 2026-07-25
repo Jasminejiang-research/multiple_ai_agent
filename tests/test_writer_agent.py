@@ -6,6 +6,7 @@ import unittest
 
 from agents.base import AgentLogEvent
 from agents.writer import WriterAgent, build_writer_prompt
+from rag.retriever import EvidenceChunk
 from schemas.agent_outputs import (
     FinanceAssumptions,
     ResearchAnalysis,
@@ -78,6 +79,19 @@ def _writer_input() -> WriterInput:
             unsupported_financial_claims=[],
             needs_human_review=["Validate pricing and delivery costs."],
         ),
+        evidence_chunks=[
+            EvidenceChunk(
+                source_id="framework-unit-economics",
+                text="Unit economics should state CAC, LTV, margin, and payback assumptions.",
+                score=0.91,
+                metadata={
+                    "file_name": "unit_economics.md",
+                    "chunk_id": "unit-economics-1",
+                    "quote": "Unit economics should state CAC, LTV, margin, and payback assumptions.",
+                    "matched_sections": ["Financial Assumptions"],
+                },
+            )
+        ],
     )
 
 
@@ -106,10 +120,26 @@ def _proposal_json() -> str:
             "title": title,
             "content": (
                 f"This {title} section uses only the supplied analysis packets. "
-                "Any uncertain statement remains an assumption that requires validation."
+                + (
+                    "Unit economics should disclose CAC, LTV, margin, and payback "
+                    "assumptions [framework-unit-economics]."
+                    if title == "Financial Assumptions"
+                    else "Any uncertain statement remains an assumption that requires validation."
+                )
             ),
-            "key_claims": [f"The {title} reasoning comes from supplied analysis."],
-            "source_ids": [],
+            "key_claims": [
+                (
+                    "Unit economics inputs require explicit assumptions "
+                    "[framework-unit-economics]."
+                    if title == "Financial Assumptions"
+                    else f"The {title} reasoning comes from supplied analysis."
+                )
+            ],
+            "source_ids": (
+                ["framework-unit-economics"]
+                if title == "Financial Assumptions"
+                else []
+            ),
             "confidence": confidence,
         }
     return ProposalDraft.model_validate(proposal_data).model_dump_json()
@@ -133,13 +163,16 @@ class WriterAgentTests(unittest.TestCase):
     """Tests for Writer input validation, prompt boundaries, and output parsing."""
 
     def test_build_writer_prompt_includes_all_packets_and_fact_boundaries(self) -> None:
-        """The prompt includes every packet and forbids new unverified facts."""
+        """The prompt includes analysis, evidence, and source boundaries."""
         prompt = build_writer_prompt(_writer_input())
 
         self.assertIn('"research_analysis"', prompt)
         self.assertIn('"strategy_analysis"', prompt)
         self.assertIn('"finance_assumptions"', prompt)
+        self.assertIn('"evidence_chunks"', prompt)
+        self.assertIn("framework-unit-economics", prompt)
         self.assertIn("Do not add facts", prompt)
+        self.assertIn("exact source marker `[source_id]`", prompt)
         self.assertIn("confidence` to `low`", prompt)
 
     def test_writer_agent_returns_validated_proposal_draft(self) -> None:
@@ -153,6 +186,10 @@ class WriterAgentTests(unittest.TestCase):
         self.assertIsInstance(proposal, ProposalDraft)
         self.assertEqual(len(llm.prompts), 1)
         self.assertEqual(proposal.financial_assumptions.confidence, "low")
+        self.assertEqual(
+            proposal.financial_assumptions.source_ids,
+            ["framework-unit-economics"],
+        )
         self.assertEqual(proposal.market_opportunity.source_ids, [])
         self.assertEqual([event.event_type for event in events], ["started", "completed"])
 
@@ -163,6 +200,16 @@ class WriterAgentTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "Invalid WriterInput"):
             build_writer_prompt(invalid_input)
+
+    def test_writer_rejects_source_id_absent_from_evidence(self) -> None:
+        """The Writer cannot invent a citation outside its evidence packet."""
+        proposal_data = ProposalDraft.model_validate_json(_proposal_json()).model_dump()
+        proposal_data["market_opportunity"]["source_ids"] = ["invented-source"]
+        llm = FakeWriterLLM(ProposalDraft.model_validate(proposal_data).model_dump_json())
+        agent = WriterAgent(llm_client=llm)
+
+        with self.assertRaisesRegex(ValueError, "unknown source IDs"):
+            agent.run(_writer_input())
 
 
 if __name__ == "__main__":

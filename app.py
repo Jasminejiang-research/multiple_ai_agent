@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -40,6 +40,7 @@ class WorkflowPipelineResult:
     markdown: str
     run_id: str
     step_statuses: list[dict[str, str]]
+    sources: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,42 @@ class RunDetail:
     node_outputs: list[NodeOutputPreview]
     error_messages: list[str]
     final_output_path: str | None
+    sources: list[dict[str, Any]] = field(default_factory=list)
+
+
+def summarize_evidence_sources(
+    evidence_chunks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Collapse retrieved chunks into concise, source-level UI records."""
+    summaries: dict[str, dict[str, Any]] = {}
+    for chunk in evidence_chunks:
+        source_id = str(chunk.get("source_id", "")).strip()
+        if not source_id:
+            continue
+        metadata = chunk.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        score = float(chunk.get("score", 0.0))
+        matched_sections = metadata.get("matched_sections", [])
+        if not isinstance(matched_sections, list):
+            matched_sections = []
+
+        summary = summaries.setdefault(
+            source_id,
+            {
+                "source_id": source_id,
+                "file_name": str(metadata.get("file_name", "")),
+                "score": score,
+                "matched_sections": [],
+                "quote": str(metadata.get("quote") or chunk.get("text", "")),
+            },
+        )
+        summary["score"] = max(float(summary["score"]), score)
+        for section in matched_sections:
+            section_name = str(section)
+            if section_name not in summary["matched_sections"]:
+                summary["matched_sections"].append(section_name)
+    return list(summaries.values())
 
 
 def load_api_key() -> str:
@@ -368,6 +405,21 @@ def build_run_detail(run: Any) -> RunDetail:
         for error in sorted(run.errors, key=lambda item: (item.created_at, item.id))
     ]
 
+    evidence_chunks: list[dict[str, Any]] = []
+    for node_output in sorted(
+        run.node_outputs,
+        key=lambda item: (item.created_at, item.id),
+    ):
+        if node_output.node_name != "rag_retrieval":
+            continue
+        snapshot = node_output.output_snapshot or {}
+        output = snapshot.get("output") or {}
+        raw_chunks = output.get("evidence_chunks", [])
+        if isinstance(raw_chunks, list):
+            evidence_chunks = [
+                chunk for chunk in raw_chunks if isinstance(chunk, dict)
+            ]
+
     return RunDetail(
         run_id=run.run_id,
         status=run.status,
@@ -375,6 +427,7 @@ def build_run_detail(run: Any) -> RunDetail:
         node_outputs=ordered_steps + extra_steps,
         error_messages=error_messages,
         final_output_path=_extract_final_output_path(run),
+        sources=summarize_evidence_sources(evidence_chunks),
     )
 
 
@@ -433,6 +486,7 @@ def run_workflow_pipeline(user_brief: dict[str, str]) -> WorkflowPipelineResult:
         markdown=markdown,
         run_id=run_id,
         step_statuses=_get_step_statuses(run_id),
+        sources=[],
     )
 
 
@@ -471,6 +525,7 @@ def run_multi_agent_pipeline(user_brief: dict[str, str]) -> WorkflowPipelineResu
         markdown=markdown,
         run_id=run_id,
         step_statuses=_get_step_statuses(run_id),
+        sources=summarize_evidence_sources(result.get("evidence_chunks", [])),
     )
 
 
@@ -577,6 +632,17 @@ def _render_run_detail(st_module: Any, run_id: str) -> None:
         for error_message in detail.error_messages:
             st_module.error(error_message)
 
+    if detail.sources:
+        with st_module.expander("Retrieved Sources", expanded=False):
+            for source in detail.sources:
+                st_module.markdown(f"**`{source['source_id']}` · {source['file_name']}**")
+                st_module.caption(
+                    f"Relevance: {source['score']:.3f} · Sections: "
+                    + ", ".join(source["matched_sections"])
+                )
+                if source["quote"]:
+                    st_module.write(source["quote"][:500])
+
     if detail.final_output_path:
         st_module.success(f"Final output path: `{detail.final_output_path}`")
     else:
@@ -608,7 +674,7 @@ def run_streamlit_app() -> None:
                 "Workflow: deterministic LangGraph pipeline "
                 "(validate → plan → write → assemble → critique → revise → export). "
                 "Multi-Agent: Supervisor → Research → Strategy → Finance → "
-                "Writer → Critic → Revision."
+                "RAG retrieval → Writer → Critic → Revision."
             ),
         )
         company_name = st.text_input("Company Name", placeholder="e.g. MediQuick AI")
@@ -686,6 +752,7 @@ def run_streamlit_app() -> None:
                     st.session_state["workflow_step_statuses"] = (
                         workflow_result.step_statuses
                     )
+                    st.session_state["workflow_sources"] = workflow_result.sources
                     st.session_state["selected_run_id"] = workflow_result.run_id
                 else:
                     user_idea = build_user_idea(
@@ -706,6 +773,7 @@ def run_streamlit_app() -> None:
                     st.session_state["download_name"] = output_path.name
                     st.session_state.pop("workflow_run_id", None)
                     st.session_state.pop("workflow_step_statuses", None)
+                    st.session_state.pop("workflow_sources", None)
             except Exception as exc:
                 st.error(f"Generation failed: {exc}")
 
@@ -724,6 +792,20 @@ def run_streamlit_app() -> None:
                     st.write(
                         f"- `{step_status['step']}`: {step_status['status']}"
                     )
+            sources = st.session_state.get("workflow_sources", [])
+            if sources:
+                st.subheader("Sources")
+                for source in sources:
+                    with st.expander(
+                        f"{source['file_name']} · {source['source_id']}",
+                        expanded=False,
+                    ):
+                        st.caption(
+                            f"Relevance: {source['score']:.3f} · Sections: "
+                            + ", ".join(source["matched_sections"])
+                        )
+                        if source["quote"]:
+                            st.write(source["quote"][:500])
         st.download_button(
             label="Download Markdown",
             data=st.session_state["markdown"],

@@ -1037,11 +1037,11 @@
 
 ##### 8.8 RAG-enabled Writer
 
-- [ ] 修改 Writer Agent 输入，加入 evidence chunks。
-- [ ] 修改 Writer prompt，要求使用 evidence。
-- [ ] 修改 Writer prompt，要求标注 source_id。
-- [ ] 修改 workflow，在写章节前检索相关资料。
-- [ ] 在 Streamlit 显示 sources。
+- [x] 修改 Writer Agent 输入，加入 evidence chunks。
+- [x] 修改 Writer prompt，要求使用 evidence。
+- [x] 修改 Writer prompt，要求标注 source_id。
+- [x] 修改 workflow，在写章节前检索相关资料。
+- [x] 在 Streamlit 显示 sources。
 - [ ] 提交 commit：`feat: integrate RAG into proposal writing`。
 
 

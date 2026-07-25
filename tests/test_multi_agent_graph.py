@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from rag.retriever import EvidenceChunk
 from schemas.agent_outputs import (
     FinanceAssumptions,
     ResearchAnalysis,
@@ -188,6 +189,28 @@ def _revised_proposal() -> RevisedProposal:
     )
 
 
+def _evidence_provider(
+    user_brief: dict[str, str],
+    sections: tuple[str, ...],
+) -> list[EvidenceChunk]:
+    """Return one traceable chunk without invoking a production vector index."""
+    assert user_brief["company_or_product_name"] == "AI Tutor for MBA Students"
+    assert "Market Opportunity" in sections
+    return [
+        EvidenceChunk(
+            source_id="tam-framework-001",
+            text="TAM, SAM, and SOM should be separated and assumptions disclosed.",
+            score=0.9,
+            metadata={
+                "file_name": "tam_sam_som.md",
+                "chunk_id": "tam-framework-chunk",
+                "quote": "TAM, SAM, and SOM should be separated and assumptions disclosed.",
+                "matched_sections": ["Market Opportunity"],
+            },
+        )
+    ]
+
+
 def _session_factory() -> Callable[[], AbstractContextManager[Session]]:
     """Create an isolated in-memory session scope for persistence assertions."""
     engine = create_engine("sqlite:///:memory:", future=True)
@@ -235,6 +258,7 @@ def test_multi_agent_graph_runs_all_agents_and_persists_outputs() -> None:
             writer_llm=llms["writer"],
             critic_llm=llms["critic"],
             revision_llm=llms["revision"],
+            evidence_provider=_evidence_provider,
             output_dir=Path(temp_dir),
             logging_session_factory=session_scope,
         )
@@ -245,12 +269,14 @@ def test_multi_agent_graph_runs_all_agents_and_persists_outputs() -> None:
         assert result["current_step"] == "export"
         assert Path(result["output_path"]).is_file()
         assert "## Executive Summary" in result["final_markdown"]
+        assert result["evidence_chunks"][0]["source_id"] == "tam-framework-001"
+        assert "tam-framework-001" in llms["writer"].prompts[0]
 
     assert all(len(llm.prompts) == 1 for llm in llms.values())
     with session_scope() as session:
         run = get_run(session, "multi-agent-run")
         assert run is not None
-        assert len(run.node_outputs) == 18
+        assert len(run.node_outputs) == 20
         assert [output.output_type for output in run.agent_outputs] == [
             "SupervisorPlan",
             "ResearchAnalysis",

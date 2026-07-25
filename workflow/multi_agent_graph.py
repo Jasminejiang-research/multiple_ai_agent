@@ -13,6 +13,11 @@ from agents.research import ResearchAgent, ResearchLLM
 from agents.strategy import StrategyAgent, StrategyLLM
 from agents.supervisor import SupervisorAgent, SupervisorLLM
 from agents.writer import WriterAgent, WriterLLM
+from rag.index import VectorIndex
+from rag.knowledge_base import (
+    DEFAULT_KNOWLEDGE_BASE_DIR,
+    retrieve_writer_evidence,
+)
 from workflow.logging import (
     SessionFactory,
     WorkflowNode,
@@ -22,6 +27,8 @@ from workflow.logging import (
 from workflow.multi_agent_nodes import (
     critic_agent_node,
     finance_agent_node,
+    EvidenceProvider,
+    rag_retrieval_node,
     research_agent_node,
     strategy_agent_node,
     supervisor_agent_node,
@@ -65,13 +72,18 @@ def build_multi_agent_workflow_graph(
     writer_llm: WriterLLM | None = None,
     critic_llm: CriticLLM | None = None,
     revision_llm: RevisionLLM | None = None,
+    evidence_provider: EvidenceProvider | None = None,
+    rag_index: VectorIndex | None = None,
+    knowledge_base_dir: Path = DEFAULT_KNOWLEDGE_BASE_DIR,
+    rag_top_k: int = 3,
+    rag_min_score: float = 0.2,
     output_dir: Path | None = None,
     logging_session_factory: SessionFactory | None = None,
 ) -> Any:
     """Build the finite Supervisor-to-revision multi-agent workflow.
 
-    Every agent runs once in a deterministic order. The Supervisor supplies the
-    auditable task plan; workers exchange only schema-validated state packets.
+    Every agent runs once in a deterministic order. Before writing, the graph
+    retrieves section-relevant knowledge-base evidence with source metadata.
     """
     supervisor = SupervisorAgent(llm_client=supervisor_llm)
     research = ResearchAgent(llm_client=research_llm)
@@ -79,6 +91,16 @@ def build_multi_agent_workflow_graph(
     finance = FinanceAgent(llm_client=finance_llm)
     writer = WriterAgent(llm_client=writer_llm)
     critic = CriticAgent(llm_client=critic_llm)
+    active_evidence_provider = evidence_provider
+    if active_evidence_provider is None:
+        active_evidence_provider = lambda brief, sections: retrieve_writer_evidence(
+            brief,
+            sections,
+            index=rag_index,
+            knowledge_base_dir=knowledge_base_dir,
+            top_k=rag_top_k,
+            min_score=rag_min_score,
+        )
 
     graph = StateGraph(WorkflowState)
     graph.add_node(
@@ -134,6 +156,17 @@ def build_multi_agent_workflow_graph(
         ),
     )
     graph.add_node(
+        "rag_retrieval",
+        with_workflow_logging(
+            "rag_retrieval",
+            lambda state: rag_retrieval_node(
+                state,
+                evidence_provider=active_evidence_provider,
+            ),
+            logging_session_factory,
+        ),
+    )
+    graph.add_node(
         "writer",
         _logged_agent_node(
             step_name="writer",
@@ -181,7 +214,8 @@ def build_multi_agent_workflow_graph(
     graph.add_edge("supervisor", "research")
     graph.add_edge("research", "strategy")
     graph.add_edge("strategy", "finance")
-    graph.add_edge("finance", "writer")
+    graph.add_edge("finance", "rag_retrieval")
+    graph.add_edge("rag_retrieval", "writer")
     graph.add_edge("writer", "critic")
     graph.add_edge("critic", "revision")
     graph.add_edge("revision", "export")

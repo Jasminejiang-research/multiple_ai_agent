@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from agents.base import AgentLogHook, BaseAgent
 from schemas.agent_outputs import WriterInput
-from schemas.workflow import ProposalDraft
+from schemas.workflow import PROPOSAL_SECTION_FIELD_NAMES, ProposalDraft
 from workflow.llm_client import StructuredJsonLLM, create_default_llm_client
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -41,7 +41,7 @@ def build_writer_prompt(input_data: dict[str, Any] | WriterInput) -> str:
     """Build a Writer prompt from validated research, strategy, and finance packets.
 
     Args:
-        input_data: The three structured analysis packets required by the Writer.
+        input_data: Structured analysis packets and filtered RAG evidence.
 
     Returns:
         Prompt text containing Writer instructions and serialized validated input.
@@ -70,6 +70,24 @@ def parse_proposal_draft(raw_output: str) -> ProposalDraft:
         raise ValueError(f"Invalid ProposalDraft output: {exc}") from exc
 
 
+def validate_proposal_source_ids(
+    proposal: ProposalDraft,
+    writer_input: WriterInput,
+) -> None:
+    """Reject source IDs that do not exist in the supplied RAG evidence."""
+    allowed_source_ids = {
+        chunk.source_id for chunk in writer_input.evidence_chunks
+    }
+    for field_name in PROPOSAL_SECTION_FIELD_NAMES:
+        section = getattr(proposal, field_name)
+        unknown_source_ids = sorted(set(section.source_ids) - allowed_source_ids)
+        if unknown_source_ids:
+            raise ValueError(
+                f"ProposalDraft.{field_name} cites unknown source IDs: "
+                + ", ".join(unknown_source_ids)
+            )
+
+
 class WriterAgent(BaseAgent):
     """Agent that writes a proposal using only supplied analysis packets."""
 
@@ -90,11 +108,22 @@ class WriterAgent(BaseAgent):
         self._llm_client = llm_client
 
     def _run(self, input_data: Any) -> ProposalDraft:
-        """Return a validated 13-section proposal without introducing new facts."""
+        """Return an evidence-grounded, validated 13-section proposal."""
         if not isinstance(input_data, (dict, WriterInput)):
             raise TypeError("WriterAgent input_data must be a dictionary or WriterInput.")
 
-        prompt = build_writer_prompt(input_data)
+        try:
+            writer_input = (
+                input_data
+                if isinstance(input_data, WriterInput)
+                else WriterInput.model_validate(input_data)
+            )
+        except ValidationError as exc:
+            raise ValueError(f"Invalid WriterInput: {exc}") from exc
+
+        prompt = build_writer_prompt(writer_input)
         llm_client = self._llm_client or create_default_writer_llm()
         raw_output = llm_client.generate_json(prompt)
-        return parse_proposal_draft(raw_output)
+        proposal = parse_proposal_draft(raw_output)
+        validate_proposal_source_ids(proposal, writer_input)
+        return proposal

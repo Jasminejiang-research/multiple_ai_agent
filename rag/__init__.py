@@ -9,6 +9,12 @@ from rag.citation_checker import (
     extract_key_claims,
 )
 from rag.evidence_filter import filter_evidence
+from rag.knowledge_base import (
+    LocalHashEmbeddingFunction,
+    build_knowledge_base_index,
+    load_knowledge_base_documents,
+    retrieve_writer_evidence,
+)
 from rag.loaders import (
     LoadedDocument,
     load_document,
@@ -22,16 +28,20 @@ __all__ = [
     "CitationCoverageReport",
     "ClaimCitationCheck",
     "EvidenceChunk",
+    "LocalHashEmbeddingFunction",
     "LoadedDocument",
     "check_citations",
     "check_claim_has_source",
     "citation_coverage_score",
     "extract_key_claims",
     "filter_evidence",
+    "build_knowledge_base_index",
+    "load_knowledge_base_documents",
     "load_document",
     "load_markdown",
     "load_pdf",
     "load_txt",
     "retrieve",
+    "retrieve_writer_evidence",
     "rewrite_query",
 ]
