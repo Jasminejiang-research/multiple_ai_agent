@@ -1084,18 +1084,18 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 
 ##### 9.1 Source Schema
 
-- [ ] 创建 `schemas/source.py`。
-- [ ] 定义 `SourceQuality` enum。
-- [ ] 定义 `WebSearchResult` schema。
-- [ ] 字段包含 title。
-- [ ] 字段包含 url。
-- [ ] 字段包含 publisher。
-- [ ] 字段包含 published_date。
-- [ ] 字段包含 summary。
-- [ ] 字段包含 relevance_score。
-- [ ] 字段包含 source_quality。
-- [ ] 写测试。
-- [ ] 提交 commit：`feat: add source schemas`。
+- [x] 创建 `schemas/source.py`。
+- [x] 定义 `SourceQuality` enum。
+- [x] 定义 `WebSearchResult` schema。
+- [x] 字段包含 title。
+- [x] 字段包含 url。
+- [x] 字段包含 publisher。
+- [x] 字段包含 published_date。
+- [x] 字段包含 summary。
+- [x] 字段包含 relevance_score。
+- [x] 字段包含 source_quality。
+- [x] 写测试。
+- [x] 提交 commit：`feat: add source schemas`。
 
 
 
