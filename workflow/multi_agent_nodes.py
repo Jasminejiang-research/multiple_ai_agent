@@ -189,7 +189,12 @@ def critic_agent_node(
     proposal_draft = state.get("proposal_draft")
     if proposal_draft is None:
         raise ValueError("critic_agent_node requires proposal_draft in state.")
-    critique = agent.run(proposal_draft)
+    critique = agent.run(
+        {
+            "proposal_draft": proposal_draft,
+            "sources": state.get("web_sources", []),
+        }
+    )
     return {
         "critique_report": critique.model_dump(),
         "current_step": "critic",

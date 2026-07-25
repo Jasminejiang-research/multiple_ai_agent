@@ -1163,11 +1163,11 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 
 ##### 9.7 Citation Enforcement
 
-- [ ] 对 market size 相关 claim 要求 citation。
-- [ ] 对 competitor list 要求 citation。
-- [ ] 对 trend claim 要求 citation。
-- [ ] 如果无 citation，则 Critic 标记 high severity。
-- [ ] 如果 source low quality，则 Critic 标记 medium severity。
+- [x] 对 market size 相关 claim 要求 citation。
+- [x] 对 competitor list 要求 citation。
+- [x] 对 trend claim 要求 citation。
+- [x] 如果无 citation，则 Critic 标记 high severity。
+- [x] 如果 source low quality，则 Critic 标记 medium severity。
 - [ ] 提交 commit：`feat: enforce citations for key claims`。
 
 

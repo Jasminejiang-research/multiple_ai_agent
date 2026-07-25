@@ -71,6 +71,42 @@ def _critique_json() -> str:
     ).model_dump_json()
 
 
+def _empty_critique_json() -> str:
+    """Return a valid report with no model-generated issues."""
+    return CritiqueReport(
+        overall_score=9.0,
+        issues=[],
+        must_fix_before_export=[],
+    ).model_dump_json()
+
+
+def _citation_proposal() -> ProposalDraft:
+    """Return a draft containing the three Sprint 9.7 claim categories."""
+    proposal_data = _proposal_draft().model_dump()
+    proposal_data["executive_summary"].update(
+        content=(
+            "Customer adoption is projected to grow by 20% annually across the "
+            "target segment, but this statement has no supporting citation."
+        ),
+        key_claims=["Customer adoption is projected to grow by 20% annually."],
+    )
+    proposal_data["market_opportunity"].update(
+        content=(
+            "The addressable market is estimated at €2 billion, but this market "
+            "size statement currently has no supporting citation."
+        ),
+        key_claims=["The addressable market is estimated at €2 billion."],
+    )
+    proposal_data["competitor_analysis"].update(
+        content=(
+            "The competitor list includes Acme and Beta, but the named companies "
+            "currently have no supporting citation."
+        ),
+        key_claims=["The competitor list includes Acme and Beta."],
+    )
+    return ProposalDraft.model_validate(proposal_data)
+
+
 class FakeCriticLLM:
     """Mock Critic LLM that records its prompt and returns fixed JSON."""
 
@@ -112,7 +148,12 @@ class CriticAgentTests(unittest.TestCase):
         self.assertEqual(len(llm.prompts), 1)
         self.assertEqual(
             {issue.issue_type for issue in report.issues},
-            {"unsupported_market_claim", "financial_inconsistency", "weak_gtm"},
+            {
+                "missing_evidence",
+                "unsupported_market_claim",
+                "financial_inconsistency",
+                "weak_gtm",
+            },
         )
         self.assertEqual(draft.model_dump(), before)
         self.assertEqual([event.event_type for event in events], ["started", "completed"])
@@ -124,6 +165,62 @@ class CriticAgentTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "Invalid ProposalDraft"):
             build_critic_prompt(invalid_input)
+
+    def test_critic_marks_uncited_required_claims_high_severity(self) -> None:
+        """Market-size, competitor, and trend claims are enforced deterministically."""
+        agent = CriticAgent(llm_client=FakeCriticLLM(_empty_critique_json()))
+
+        report = agent.run(_citation_proposal())
+
+        enforced = [
+            issue
+            for issue in report.issues
+            if issue.description.startswith("Citation enforcement:")
+        ]
+        self.assertEqual(len(enforced), 3)
+        self.assertTrue(all(issue.severity == "high" for issue in enforced))
+        descriptions = " ".join(issue.description for issue in enforced)
+        self.assertIn("market_size", descriptions)
+        self.assertIn("competitor", descriptions)
+        self.assertIn("trend", descriptions)
+        self.assertEqual(len(report.must_fix_before_export), 3)
+
+    def test_critic_marks_low_quality_citation_medium_severity(self) -> None:
+        """A cited blog or unknown source is not treated as strong evidence."""
+        proposal_data = _proposal_draft().model_dump()
+        proposal_data["competitor_analysis"].update(
+            content=(
+                "The competitor list includes Acme and Beta [web-blog-1], based "
+                "on a current comparison of alternatives in the target segment."
+            ),
+            key_claims=[
+                "The competitor list includes Acme and Beta [web-blog-1]."
+            ],
+            source_ids=["web-blog-1"],
+        )
+        agent = CriticAgent(llm_client=FakeCriticLLM(_empty_critique_json()))
+
+        report = agent.run(
+            {
+                "proposal_draft": proposal_data,
+                "sources": [
+                    {
+                        "source_id": "web-blog-1",
+                        "source_quality": "blog",
+                    }
+                ],
+            }
+        )
+
+        enforced = [
+            issue
+            for issue in report.issues
+            if issue.description.startswith("Citation enforcement:")
+        ]
+        self.assertEqual(len(enforced), 1)
+        self.assertEqual(enforced[0].severity, "medium")
+        self.assertIn("web-blog-1", enforced[0].description)
+        self.assertEqual(report.must_fix_before_export, [])
 
 
 if __name__ == "__main__":

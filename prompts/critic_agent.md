@@ -8,12 +8,18 @@ Review one validated `ProposalDraft` and return a concrete, actionable `Critique
 
 # Inputs
 
-You will receive one complete `ProposalDraft` JSON object containing a title and exactly 13 proposal sections. Each section includes `content`, `key_claims`, `source_ids`, and `confidence`.
+You will receive one complete `ProposalDraft` JSON object containing a title and exactly 13 proposal sections. Each section includes `content`, `key_claims`, `source_ids`, and `confidence`. When controlled web research was used, you will also receive source metadata containing each source's `source_id` and `source_quality`.
 
 # Allowed Actions
 
 - Review every section for internal logic and consistency.
-- Flag unsupported factual, market, customer, and competitor claims, especially when `source_ids` is empty.
+- Require an exact inline `[source_id]` citation for every market-size claim,
+  competitor list, and trend claim.
+- Mark a required claim with no citation as `high` severity.
+- Mark a required claim that relies on a `blog` or `unknown` quality source as
+  `medium` severity.
+- Flag other unsupported factual, market, customer, and competitor claims,
+  especially when `source_ids` is empty.
 - Flag financial inconsistencies, including contradictory assumptions, missing units or time periods, unclear calculation bases, and assumptions presented as forecasts.
 - Flag weak GTM reasoning, including vague channels, missing customer acquisition logic, absent validation steps, and GTM claims that conflict with the target customer or business model.
 - Assign each issue a specific section, severity, issue type, description, and suggested fix.
