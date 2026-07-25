@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, TypeAlias
 
 from schemas import WebSearchResult
+from tools.tavily_search import TavilySearchClient
 
 logger = logging.getLogger(__name__)
 
@@ -18,18 +19,22 @@ SearchProvider: TypeAlias = Callable[
 ]
 
 
-def _mock_search_provider(
+def _tavily_search_provider(
     query: str,
     allowed_domains: list[str] | None,
     recency: str | None,
     max_results: int,
 ) -> list[WebSearchResult]:
-    """Return no results until a real provider is added in Sprint task 9.3."""
-    del query, allowed_domains, recency, max_results
-    return []
+    """Search with the Tavily provider configured by ``TAVILY_API_KEY``."""
+    return TavilySearchClient.from_environment().search(
+        query,
+        allowed_domains,
+        recency,
+        max_results,
+    )
 
 
-_search_provider: SearchProvider = _mock_search_provider
+_search_provider: SearchProvider = _tavily_search_provider
 
 
 def _normalize_allowed_domains(
@@ -60,9 +65,8 @@ def search_web(
 ) -> list[WebSearchResult]:
     """Search through the configured provider and return normalized results.
 
-    The initial provider is an offline mock that returns no results. Every
-    attempt logs the normalized query and an ISO-8601 UTC timestamp so future
-    provider calls remain auditable.
+    The production provider is Tavily. Every attempt logs the normalized query
+    and an ISO-8601 UTC timestamp so provider calls remain auditable.
     """
     if not isinstance(query, str):
         raise TypeError("query must be a string.")

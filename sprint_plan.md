@@ -1114,14 +1114,14 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 
 ##### 9.3 Real Search Provider
 
-- [ ] 选择 Tavily / SerpAPI / Bing Search API 中一个。
-- [ ] 在 `.env.example` 添加对应 API key。
-- [ ] 实现 provider client。
-- [ ] 处理 API error。
-- [ ] 处理 no results。
-- [ ] 处理 rate limit。
-- [ ] 写 integration note，不在 CI 中调用真实 API。
-- [ ] 提交 commit：`feat: add web search provider integration`。
+- [x] 选择 Tavily / SerpAPI / Bing Search API 中一个。
+- [x] 在 `.env.example` 添加对应 API key。
+- [x] 实现 provider client。
+- [x] 处理 API error。
+- [x] 处理 no results。
+- [x] 处理 rate limit。
+- [x] 写 integration note，不在 CI 中调用真实 API。
+- [x] 提交 commit：`feat: add web search provider integration`。
 
 
 
