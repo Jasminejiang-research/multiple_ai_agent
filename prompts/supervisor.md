@@ -69,6 +69,7 @@ The JSON must match this shape:
 Rules:
 
 - `tasks` must contain exactly 5 items: one task each for `research`, `strategy`, `finance`, `writer`, and `critic`. Each role must appear exactly once; do not split a role's work into additional tasks.
+- Each task's `input_requirements` must contain at most 8 items. Merge related inputs into concise logical groups instead of dropping required information.
 - `task_id` must be snake_case and unique.
 - Every `agent_role` used in `tasks` must appear in `selected_agents`.
 - Every role in `selected_agents` must have at least one task.
