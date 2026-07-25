@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from agents.base import AgentLogEvent
 from agents.research import ResearchAgent, build_research_prompt
 from schemas.agent_outputs import ResearchAnalysis
+from schemas.source import SourceQuality, WebSearchResult
 
 
 def _complete_brief() -> dict[str, str]:
@@ -82,6 +83,33 @@ class FakeResearchLLM:
         return self.response
 
 
+class FakeWebSearch:
+    """Mock controlled search tool that records market and competitor queries."""
+
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    def __call__(
+        self,
+        query: str,
+        allowed_domains: list[str] | None,
+        recency: str | None,
+        max_results: int,
+    ) -> list[WebSearchResult]:
+        self.queries.append(query)
+        return [
+            WebSearchResult(
+                title=f"Evidence for {query}",
+                url=f"https://example.com/source-{len(self.queries)}",
+                publisher="Example Research",
+                published_date="2026-06-01",
+                summary="A current source returned by the controlled search test double.",
+                relevance_score=0.9,
+                source_quality=SourceQuality.RESEARCH_ORG,
+            )
+        ]
+
+
 class ResearchAgentTests(unittest.TestCase):
     """Tests for Research prompt construction and validated analysis output."""
 
@@ -100,7 +128,12 @@ class ResearchAgentTests(unittest.TestCase):
         """The Research Agent parses fake LLM JSON into validated analysis."""
         events: list[AgentLogEvent] = []
         llm = FakeResearchLLM(_research_analysis_json())
-        agent = ResearchAgent(llm_client=llm, log_hook=events.append)
+        web_search = FakeWebSearch()
+        agent = ResearchAgent(
+            llm_client=llm,
+            web_search_tool=web_search,
+            log_hook=events.append,
+        )
 
         analysis = agent.run(_complete_brief())
 
@@ -110,6 +143,13 @@ class ResearchAgentTests(unittest.TestCase):
         self.assertEqual(analysis.competitor_assumptions[0].confidence, "low")
         self.assertEqual(len(analysis.unsupported_claims), 1)
         self.assertEqual([event.event_type for event in events], ["started", "completed"])
+        self.assertEqual(len(web_search.queries), 2)
+        self.assertIn("market trends research", web_search.queries[0])
+        self.assertIn("competitors alternatives", web_search.queries[1])
+        self.assertIn("Market Research Agent", llm.prompts[0])
+        self.assertIn("Competitor Agent", llm.prompts[0])
+        self.assertIn("https://example.com/source-1", llm.prompts[0])
+        self.assertIn("https://example.com/source-2", llm.prompts[0])
 
     def test_research_analysis_rejects_full_proposal_fields(self) -> None:
         """Research output should not carry full proposal prose fields."""

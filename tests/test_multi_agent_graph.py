@@ -17,6 +17,7 @@ from schemas.agent_outputs import (
     StrategyAnalysis,
     SupervisorPlan,
 )
+from schemas.source import SourceQuality, WebSearchResult
 from schemas.workflow import (
     PROPOSAL_SECTION_FIELD_NAMES,
     PROPOSAL_SECTION_TITLES,
@@ -211,6 +212,30 @@ def _evidence_provider(
     ]
 
 
+def _web_search_provider(
+    query: str,
+    allowed_domains: list[str] | None,
+    recency: str | None,
+    max_results: int,
+) -> list[WebSearchResult]:
+    """Return one distinct source for each approved research query."""
+    assert allowed_domains is None
+    assert recency == "last_12_months"
+    assert max_results == 5
+    scope = "competitor" if "competitors alternatives" in query else "market"
+    return [
+        WebSearchResult(
+            title=f"{scope.title()} evidence",
+            url=f"https://example.com/{scope}",
+            publisher="Example Research",
+            published_date="2026-06-01",
+            summary=f"Controlled {scope} evidence for the graph test.",
+            relevance_score=0.9,
+            source_quality=SourceQuality.RESEARCH_ORG,
+        )
+    ]
+
+
 def _session_factory() -> Callable[[], AbstractContextManager[Session]]:
     """Create an isolated in-memory session scope for persistence assertions."""
     engine = create_engine("sqlite:///:memory:", future=True)
@@ -253,6 +278,7 @@ def test_multi_agent_graph_runs_all_agents_and_persists_outputs() -> None:
         graph = build_multi_agent_workflow_graph(
             supervisor_llm=llms["supervisor"],
             research_llm=llms["research"],
+            web_search_tool=_web_search_provider,
             strategy_llm=llms["strategy"],
             finance_llm=llms["finance"],
             writer_llm=llms["writer"],
@@ -270,13 +296,25 @@ def test_multi_agent_graph_runs_all_agents_and_persists_outputs() -> None:
         assert Path(result["output_path"]).is_file()
         assert "## Executive Summary" in result["final_markdown"]
         assert result["evidence_chunks"][0]["source_id"] == "tam-framework-001"
+        assert len(result["web_sources"]) == 2
+        assert {source["agent_name"] for source in result["web_sources"]} == {
+            "Market Research Agent",
+            "Competitor Agent",
+        }
         assert "tam-framework-001" in llms["writer"].prompts[0]
+        assert "https://example.com/market" in llms["research"].prompts[0]
+        assert "https://example.com/competitor" in llms["research"].prompts[0]
 
     assert all(len(llm.prompts) == 1 for llm in llms.values())
     with session_scope() as session:
         run = get_run(session, "multi-agent-run")
         assert run is not None
         assert len(run.node_outputs) == 20
+        assert len(run.sources) == 2
+        assert {source.agent_name for source in run.sources} == {
+            "Market Research Agent",
+            "Competitor Agent",
+        }
         assert [output.output_type for output in run.agent_outputs] == [
             "SupervisorPlan",
             "ResearchAnalysis",

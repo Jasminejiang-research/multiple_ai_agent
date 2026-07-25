@@ -41,6 +41,7 @@ class WorkflowPipelineResult:
     run_id: str
     step_statuses: list[dict[str, str]]
     sources: list[dict[str, Any]] = field(default_factory=list)
+    web_sources: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,7 @@ class RunDetail:
     error_messages: list[str]
     final_output_path: str | None
     sources: list[dict[str, Any]] = field(default_factory=list)
+    web_sources: list[dict[str, Any]] = field(default_factory=list)
 
 
 def summarize_evidence_sources(
@@ -108,6 +110,40 @@ def summarize_evidence_sources(
             if section_name not in summary["matched_sections"]:
                 summary["matched_sections"].append(section_name)
     return list(summaries.values())
+
+
+def summarize_web_sources(sources: list[Any]) -> list[dict[str, Any]]:
+    """Normalize persisted or in-memory web sources into table-ready rows."""
+    rows: list[dict[str, Any]] = []
+    for source in sources:
+        if isinstance(source, dict):
+            value = source
+            getter = value.get
+        else:
+            getter = lambda key, default=None: getattr(source, key, default)
+
+        source_quality = getter("source_quality", "unknown")
+        if hasattr(source_quality, "value"):
+            source_quality = source_quality.value
+        published_date = getter("published_date")
+        if hasattr(published_date, "isoformat"):
+            published_date = published_date.isoformat()
+
+        rows.append(
+            {
+                "source_id": str(getter("source_id", "")),
+                "agent": str(getter("agent_name", "")),
+                "title": str(getter("title", "")),
+                "url": str(getter("url", "")),
+                "publisher": str(getter("publisher", "") or ""),
+                "published_date": str(published_date or ""),
+                "quality": str(source_quality),
+                "relevance": float(getter("relevance_score", 0.0)),
+                "stale": bool(getter("stale", False)),
+                "query": str(getter("query", "")),
+            }
+        )
+    return rows
 
 
 def load_api_key() -> str:
@@ -428,6 +464,7 @@ def build_run_detail(run: Any) -> RunDetail:
         error_messages=error_messages,
         final_output_path=_extract_final_output_path(run),
         sources=summarize_evidence_sources(evidence_chunks),
+        web_sources=summarize_web_sources(list(run.sources)),
     )
 
 
@@ -487,6 +524,7 @@ def run_workflow_pipeline(user_brief: dict[str, str]) -> WorkflowPipelineResult:
         run_id=run_id,
         step_statuses=_get_step_statuses(run_id),
         sources=[],
+        web_sources=[],
     )
 
 
@@ -526,6 +564,7 @@ def run_multi_agent_pipeline(user_brief: dict[str, str]) -> WorkflowPipelineResu
         run_id=run_id,
         step_statuses=_get_step_statuses(run_id),
         sources=summarize_evidence_sources(result.get("evidence_chunks", [])),
+        web_sources=summarize_web_sources(result.get("web_sources", [])),
     )
 
 
@@ -643,6 +682,14 @@ def _render_run_detail(st_module: Any, run_id: str) -> None:
                 if source["quote"]:
                     st_module.write(source["quote"][:500])
 
+    if detail.web_sources:
+        with st_module.expander("Web Sources", expanded=False):
+            st_module.dataframe(
+                detail.web_sources,
+                use_container_width=True,
+                hide_index=True,
+            )
+
     if detail.final_output_path:
         st_module.success(f"Final output path: `{detail.final_output_path}`")
     else:
@@ -753,6 +800,9 @@ def run_streamlit_app() -> None:
                         workflow_result.step_statuses
                     )
                     st.session_state["workflow_sources"] = workflow_result.sources
+                    st.session_state["workflow_web_sources"] = (
+                        workflow_result.web_sources
+                    )
                     st.session_state["selected_run_id"] = workflow_result.run_id
                 else:
                     user_idea = build_user_idea(
@@ -774,6 +824,7 @@ def run_streamlit_app() -> None:
                     st.session_state.pop("workflow_run_id", None)
                     st.session_state.pop("workflow_step_statuses", None)
                     st.session_state.pop("workflow_sources", None)
+                    st.session_state.pop("workflow_web_sources", None)
             except Exception as exc:
                 st.error(f"Generation failed: {exc}")
 
@@ -806,6 +857,14 @@ def run_streamlit_app() -> None:
                         )
                         if source["quote"]:
                             st.write(source["quote"][:500])
+            web_sources = st.session_state.get("workflow_web_sources", [])
+            if web_sources:
+                st.subheader("Web Sources")
+                st.dataframe(
+                    web_sources,
+                    use_container_width=True,
+                    hide_index=True,
+                )
         st.download_button(
             label="Download Markdown",
             data=st.session_state["markdown"],

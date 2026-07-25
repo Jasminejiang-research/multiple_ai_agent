@@ -13,6 +13,7 @@ from agents.supervisor import SupervisorAgent
 from agents.writer import WriterAgent
 from rag.retriever import EvidenceChunk
 from schemas.agent_outputs import AgentRole, SupervisorPlan
+from schemas.source import SourceRecord
 from schemas.workflow import PROPOSAL_SECTION_TITLES
 from workflow.nodes import render_proposal_preview
 from workflow.state import WorkflowState
@@ -69,13 +70,24 @@ def research_agent_node(
     state: WorkflowState,
     *,
     agent: ResearchAgent,
+    source_sink: Callable[[str, list[SourceRecord]], None] | None = None,
 ) -> WorkflowState:
-    """Run brief-grounded research under the Supervisor's assigned task."""
+    """Run controlled web research, persist it, then produce analysis."""
     user_brief = dict(state.get("user_brief") or {})
     user_brief["supervisor_task"] = _supervisor_task(state, "research")
+    web_sources = agent.collect_web_sources(user_brief)
+    run_id = state.get("run_id")
+    if source_sink is not None and run_id:
+        source_sink(run_id, web_sources)
+    user_brief["web_research_sources"] = [
+        source.model_dump(mode="json") for source in web_sources
+    ]
     analysis = agent.run(user_brief)
     return {
         "research_analysis": analysis.model_dump(),
+        "web_sources": [
+            source.model_dump(mode="json") for source in web_sources
+        ],
         "current_step": "research",
     }
 

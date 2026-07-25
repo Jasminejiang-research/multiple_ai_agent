@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from datetime import datetime, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -14,6 +15,7 @@ from storage.repositories import (
     save_agent_output,
     save_error,
     save_node_output,
+    save_source_records,
     update_run_status,
 )
 
@@ -96,6 +98,53 @@ def test_save_agent_output(session: Session) -> None:
     assert fetched is not None
     assert len(fetched.agent_outputs) == 1
     assert fetched.agent_outputs[0].agent_name == "Research Agent"
+
+
+def test_save_source_records_persists_every_web_result(session: Session) -> None:
+    """Every market and competitor result should remain attached to its run."""
+    create_run(session, run_id="run-sources-001")
+    retrieved_at = datetime.now(timezone.utc)
+
+    records = save_source_records(
+        session,
+        run_id="run-sources-001",
+        sources=[
+            {
+                "source_id": "web-market-1",
+                "agent_name": "Market Research Agent",
+                "query": "AI education market trends",
+                "retrieved_at": retrieved_at,
+                "title": "Market report",
+                "url": "https://example.com/market",
+                "publisher": "Example Research",
+                "published_date": "2026-06-01",
+                "summary": "Current market evidence.",
+                "relevance_score": 0.9,
+                "source_quality": "research_org",
+            },
+            {
+                "source_id": "web-competitor-1",
+                "agent_name": "Competitor Agent",
+                "query": "AI education competitors",
+                "retrieved_at": retrieved_at,
+                "title": "Competitor directory",
+                "url": "https://example.com/competitors",
+                "publisher": "Example Research",
+                "published_date": "2026-05-01",
+                "summary": "Current competitor evidence.",
+                "relevance_score": 0.8,
+                "source_quality": "research_org",
+            },
+        ],
+    )
+    fetched = get_run(session, "run-sources-001")
+
+    assert len(records) == 2
+    assert fetched is not None
+    assert [source.source_id for source in fetched.sources] == [
+        "web-market-1",
+        "web-competitor-1",
+    ]
 
 
 def test_save_error(session: Session) -> None:

@@ -7,7 +7,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app import build_run_detail, summarize_evidence_sources
 from storage.db import Base
-from storage.repositories import create_run, get_run, save_error, save_node_output
+from storage.repositories import (
+    create_run,
+    get_run,
+    save_error,
+    save_node_output,
+    save_source_records,
+)
 
 
 def test_build_run_detail_includes_brief_nodes_errors_and_output_path() -> None:
@@ -32,6 +38,9 @@ def test_build_run_detail_includes_brief_nodes_errors_and_output_path() -> None:
     assert detail.error_messages == ["export: ValueError: Export failed"]
     assert detail.final_output_path == "outputs/ai_tutor.md"
     assert detail.sources == []
+    assert len(detail.web_sources) == 1
+    assert detail.web_sources[0]["agent"] == "Market Research Agent"
+    assert detail.web_sources[0]["url"] == "https://example.com/market"
 
 
 def test_summarize_evidence_sources_merges_sections_for_ui() -> None:
@@ -104,5 +113,24 @@ def _create_logged_run(session: Session) -> None:
         step_name="export",
         error_type="ValueError",
         error_message="Export failed",
+    )
+    save_source_records(
+        session,
+        run_id="run-detail-001",
+        sources=[
+            {
+                "source_id": "web-market-ui",
+                "agent_name": "Market Research Agent",
+                "query": "AI tutor market trends",
+                "retrieved_at": "2026-07-25T10:00:00Z",
+                "title": "AI tutor market report",
+                "url": "https://example.com/market",
+                "publisher": "Example Research",
+                "published_date": "2026-06-01",
+                "summary": "Market source rendered in the Streamlit table.",
+                "relevance_score": 0.9,
+                "source_quality": "research_org",
+            }
+        ],
     )
     session.commit()

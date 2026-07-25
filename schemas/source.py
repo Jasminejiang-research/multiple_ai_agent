@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import Enum
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from dateutil import parser as date_parser
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -89,3 +89,29 @@ class WebSearchResult(BaseModel):
             raise ValueError(
                 "published_date must contain a recognizable calendar date."
             ) from exc
+
+
+WebResearchAgent = Literal["Market Research Agent", "Competitor Agent"]
+
+
+class SourceRecord(WebSearchResult):
+    """Auditable web source collected by one approved research-agent scope."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    source_id: Annotated[
+        str,
+        Field(min_length=1, description="Unique identifier used in run history."),
+    ]
+    agent_name: Annotated[
+        WebResearchAgent,
+        Field(description="Approved research-agent scope that requested the source."),
+    ]
+    query: Annotated[
+        str,
+        Field(min_length=1, description="Controlled search query that found the source."),
+    ]
+    retrieved_at: Annotated[
+        datetime,
+        Field(description="UTC timestamp when the source was retrieved."),
+    ]

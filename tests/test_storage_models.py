@@ -11,6 +11,7 @@ from storage.models import (
     NodeOutput,
     ProposalOutput,
     RunRecord,
+    SourceRecordModel,
 )
 
 
@@ -29,6 +30,7 @@ def test_storage_models_create_expected_tables() -> None:
         AgentOutput.__tablename__,
         ProposalOutput.__tablename__,
         ErrorRecord.__tablename__,
+        SourceRecordModel.__tablename__,
     }.issubset(table_names)
 
 
@@ -43,6 +45,7 @@ def test_storage_models_include_core_audit_columns() -> None:
         column["name"] for column in inspector.get_columns("node_outputs")
     }
     error_columns = {column["name"] for column in inspector.get_columns("error_records")}
+    source_columns = {column["name"] for column in inspector.get_columns("sources")}
 
     assert {
         "run_id",
@@ -61,3 +64,18 @@ def test_storage_models_include_core_audit_columns() -> None:
         node_output_columns
     )
     assert {"error_type", "error_message", "stack_trace"}.issubset(error_columns)
+    assert {
+        "source_id",
+        "run_id",
+        "agent_name",
+        "query",
+        "title",
+        "url",
+        "publisher",
+        "published_date",
+        "summary",
+        "relevance_score",
+        "source_quality",
+        "stale",
+        "retrieved_at",
+    }.issubset(source_columns)

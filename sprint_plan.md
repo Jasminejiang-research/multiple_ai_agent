@@ -1151,13 +1151,13 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 
 ##### 9.6 Integrate with Agents
 
-- [ ] Market Research Agent 可以调用 search_web。
-- [ ] Competitor Agent 可以调用 search_web。
-- [ ] Strategy Agent 暂时不直接调用 web。
-- [ ] Finance Agent 暂时不直接调用 web。
-- [ ] 保存所有 web sources 到 DB。
-- [ ] 在 Streamlit 显示 sources table。
-- [ ] 提交 commit：`feat: integrate web research into research agents`。
+- [x] Market Research Agent 可以调用 search_web。
+- [x] Competitor Agent 可以调用 search_web。
+- [x] Strategy Agent 暂时不直接调用 web。
+- [x] Finance Agent 暂时不直接调用 web。
+- [x] 保存所有 web sources 到 DB。
+- [x] 在 Streamlit 显示 sources table。
+- [x] 提交 commit：`feat: integrate web research into research agents`。
 
 
 

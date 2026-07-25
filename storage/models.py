@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, JSON, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from storage.db import Base
@@ -54,6 +54,10 @@ class RunRecord(Base):
         back_populates="run",
         cascade="all, delete-orphan",
     )
+    sources: Mapped[list[SourceRecordModel]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
 
 
 class NodeOutput(Base):
@@ -85,6 +89,29 @@ class AgentOutput(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     run: Mapped[RunRecord] = relationship(back_populates="agent_outputs")
+
+
+class SourceRecordModel(Base):
+    """A controlled web-search source collected during one workflow run."""
+
+    __tablename__ = "sources"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.run_id"), index=True)
+    agent_name: Mapped[str] = mapped_column(String(64))
+    query: Mapped[str] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(Text)
+    url: Mapped[str] = mapped_column(Text)
+    publisher: Mapped[str | None] = mapped_column(String(256))
+    published_date: Mapped[date | None] = mapped_column(Date)
+    summary: Mapped[str] = mapped_column(Text)
+    relevance_score: Mapped[float] = mapped_column(Float)
+    source_quality: Mapped[str] = mapped_column(String(32))
+    stale: Mapped[bool] = mapped_column(Boolean, default=False)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    run: Mapped[RunRecord] = relationship(back_populates="sources")
 
 
 class ProposalOutput(Base):

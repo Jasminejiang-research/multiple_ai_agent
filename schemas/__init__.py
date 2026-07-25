@@ -11,7 +11,7 @@ from schemas.agent_outputs import (
     WriterInput,
 )
 from schemas.proposal_schema import BusinessProposal
-from schemas.source import SourceQuality, WebSearchResult
+from schemas.source import SourceQuality, SourceRecord, WebSearchResult
 from schemas.workflow import (
     CritiqueIssue,
     CritiqueReport,
@@ -42,6 +42,7 @@ __all__ = [
     "StrategyAnalysis",
     "StrategyInsight",
     "SourceQuality",
+    "SourceRecord",
     "SupervisorPlan",
     "SupervisorTask",
     "UnsupportedClaim",

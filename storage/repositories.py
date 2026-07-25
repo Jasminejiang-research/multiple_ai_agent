@@ -8,7 +8,15 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from storage.models import AgentOutput, ErrorRecord, NodeOutput, RunRecord, utc_now
+from schemas.source import SourceRecord
+from storage.models import (
+    AgentOutput,
+    ErrorRecord,
+    NodeOutput,
+    RunRecord,
+    SourceRecordModel,
+    utc_now,
+)
 
 
 def create_run(
@@ -96,6 +104,40 @@ def save_agent_output(
     return agent_output
 
 
+def save_source_records(
+    session: Session,
+    *,
+    run_id: str,
+    sources: list[SourceRecord | dict[str, Any]],
+) -> list[SourceRecordModel]:
+    """Persist every controlled web-search result collected for one run."""
+    _require_run(session, run_id)
+    records: list[SourceRecordModel] = []
+    for source_input in sources:
+        source = SourceRecord.model_validate(source_input)
+        record = SourceRecordModel(
+            run_id=run_id,
+            source_id=source.source_id,
+            agent_name=source.agent_name,
+            query=source.query,
+            title=source.title,
+            url=source.url,
+            publisher=source.publisher,
+            published_date=source.published_date,
+            summary=source.summary,
+            relevance_score=source.relevance_score,
+            source_quality=source.source_quality.value,
+            stale=source.stale,
+            retrieved_at=source.retrieved_at,
+        )
+        session.add(record)
+        records.append(record)
+    session.flush()
+    for record in records:
+        session.refresh(record)
+    return records
+
+
 def save_error(
     session: Session,
     *,
@@ -129,6 +171,7 @@ def get_run(session: Session, run_id: str) -> RunRecord | None:
             selectinload(RunRecord.node_outputs),
             selectinload(RunRecord.agent_outputs),
             selectinload(RunRecord.errors),
+            selectinload(RunRecord.sources),
         )
     )
     return session.scalar(statement)

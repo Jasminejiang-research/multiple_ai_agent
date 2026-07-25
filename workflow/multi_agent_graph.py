@@ -18,6 +18,8 @@ from rag.knowledge_base import (
     DEFAULT_KNOWLEDGE_BASE_DIR,
     retrieve_writer_evidence,
 )
+from schemas.source import SourceRecord
+from storage.repositories import save_source_records
 from workflow.logging import (
     SessionFactory,
     WorkflowNode,
@@ -36,6 +38,7 @@ from workflow.multi_agent_nodes import (
 )
 from workflow.nodes import RevisionLLM, export_node, input_validator_node, revision_node
 from workflow.state import WorkflowState
+from tools.web_search import SearchProvider, search_web
 
 
 def _missing_info_route(state: WorkflowState) -> str:
@@ -67,6 +70,7 @@ def build_multi_agent_workflow_graph(
     *,
     supervisor_llm: SupervisorLLM | None = None,
     research_llm: ResearchLLM | None = None,
+    web_search_tool: SearchProvider = search_web,
     strategy_llm: StrategyLLM | None = None,
     finance_llm: FinanceLLM | None = None,
     writer_llm: WriterLLM | None = None,
@@ -86,7 +90,10 @@ def build_multi_agent_workflow_graph(
     retrieves section-relevant knowledge-base evidence with source metadata.
     """
     supervisor = SupervisorAgent(llm_client=supervisor_llm)
-    research = ResearchAgent(llm_client=research_llm)
+    research = ResearchAgent(
+        llm_client=research_llm,
+        web_search_tool=web_search_tool,
+    )
     strategy = StrategyAgent(llm_client=strategy_llm)
     finance = FinanceAgent(llm_client=finance_llm)
     writer = WriterAgent(llm_client=writer_llm)
@@ -101,6 +108,17 @@ def build_multi_agent_workflow_graph(
             top_k=rag_top_k,
             min_score=rag_min_score,
         )
+
+    def persist_web_sources(
+        run_id: str,
+        sources: list[SourceRecord],
+    ) -> None:
+        """Save search results before downstream LLM work can fail."""
+        if logging_session_factory is None:
+            return
+        with logging_session_factory() as session:
+            save_source_records(session, run_id=run_id, sources=sources)
+            session.commit()
 
     graph = StateGraph(WorkflowState)
     graph.add_node(
@@ -126,7 +144,11 @@ def build_multi_agent_workflow_graph(
         "research",
         _logged_agent_node(
             step_name="research",
-            node=lambda state: research_agent_node(state, agent=research),
+            node=lambda state: research_agent_node(
+                state,
+                agent=research,
+                source_sink=persist_web_sources,
+            ),
             agent_name=research.name,
             output_type="ResearchAnalysis",
             output_field="research_analysis",

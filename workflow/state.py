@@ -21,6 +21,7 @@ class WorkflowState(TypedDict):
     missing_info: NotRequired[list[str]]
     supervisor_plan: NotRequired[dict[str, Any]]
     research_analysis: NotRequired[dict[str, Any]]
+    web_sources: NotRequired[list[dict[str, Any]]]
     strategy_analysis: NotRequired[dict[str, Any]]
     finance_assumptions: NotRequired[dict[str, Any]]
     evidence_chunks: NotRequired[list[dict[str, Any]]]

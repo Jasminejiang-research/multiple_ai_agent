@@ -27,6 +27,8 @@ You will receive a JSON object named `user_brief` with these fields:
 - Identify market trend hypotheses that are relevant to the brief.
 - Summarize likely customer pain points, behaviors, and buying-context notes.
 - List competitor or substitute assumptions based on the brief and any known competitors provided by the user.
+- Use only the supplied `Controlled Web Research Sources JSON` as external web evidence.
+- Distinguish sourced observations from hypotheses and preserve source IDs in the rationale when relevant.
 - Mark confidence as `high`, `medium`, or `low` based only on the available input.
 - Clearly list unsupported claims that need external evidence before they can be used as facts.
 - Add questions or uncertainties to `needs_human_review`.
@@ -37,7 +39,8 @@ You will receive a JSON object named `user_brief` with these fields:
 - Do not write proposal sections such as Executive Summary, Market Opportunity, or Competitor Analysis.
 - Do not invent market size, market share, revenue, CAGR, customer counts, or funding statistics.
 - Do not present competitor facts as verified unless the user provided them.
-- Do not call tools, web research, RAG, databases, or external APIs.
+- Do not browse freely or call unapproved tools. Web access is limited to the
+  controlled `search_web` results supplied by the host application.
 - Do not give legal, tax, securities, or investment advice.
 
 # Output Schema
