@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import datetime, timezone
 
@@ -178,6 +179,18 @@ class FakeWriterLLM:
         return self.response
 
 
+class SequenceWriterLLM:
+    """Return responses in order so one validation retry can be tested."""
+
+    def __init__(self, responses: list[str]) -> None:
+        self.responses = responses
+        self.prompts: list[str] = []
+
+    def generate_json(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return self.responses[len(self.prompts) - 1]
+
+
 class WriterAgentTests(unittest.TestCase):
     """Tests for Writer input validation, prompt boundaries, and output parsing."""
 
@@ -198,7 +211,7 @@ class WriterAgentTests(unittest.TestCase):
         self.assertIn("metadata.stale", prompt)
         self.assertIn("state its publication date", prompt)
         self.assertIn("top-level `global_source_ids`", prompt)
-        self.assertIn("`financial_assumptions.key_claims` to at most 8 items", prompt)
+        self.assertIn("every section's `key_claims` to at most 8 items", prompt)
 
     def test_writer_agent_returns_validated_proposal_draft(self) -> None:
         """The Writer parses mock JSON into a logged, 13-section proposal."""
@@ -260,6 +273,24 @@ class WriterAgentTests(unittest.TestCase):
         proposal = WriterAgent(llm_client=llm).run(_writer_input())
 
         self.assertIn("web-market-research", proposal.global_source_ids)
+
+    def test_writer_retries_once_with_validation_error_feedback(self) -> None:
+        """An invalid first draft receives one schema-guided correction attempt."""
+        invalid_proposal = json.loads(_proposal_json())
+        invalid_proposal["appendix"]["key_claims"] = [
+            f"Appendix claim {index}" for index in range(1, 10)
+        ]
+        llm = SequenceWriterLLM(
+            [json.dumps(invalid_proposal), _proposal_json()]
+        )
+
+        proposal = WriterAgent(llm_client=llm).run(_writer_input())
+
+        self.assertIsInstance(proposal, ProposalDraft)
+        self.assertEqual(len(llm.prompts), 2)
+        self.assertIn("# Validation Correction", llm.prompts[1])
+        self.assertIn("appendix.key_claims", llm.prompts[1])
+        self.assertIn("do not silently truncate", llm.prompts[1])
 
 
 if __name__ == "__main__":

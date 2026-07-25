@@ -27,7 +27,7 @@ You will receive one JSON object containing:
 - Add each source actually cited by a section to that section's `source_ids`; use only IDs present in `evidence_chunks` or `web_sources`.
 - Put the deduplicated source IDs cited across all sections in the top-level `global_source_ids` list. Do not use `appendix.source_ids` as a proposal-wide source list; it may contain only sources directly cited by Appendix claims.
 - Leave `source_ids` empty when a section makes no evidence-derived factual claim.
-- Keep `financial_assumptions.key_claims` to at most 8 items; consolidate overlapping financial claims instead of splitting them further.
+- Keep every section's `key_claims` to at most 8 items; merge duplicate or overlapping claims instead of silently truncating them.
 - When cited evidence has `metadata.stale` set to `true`, explicitly identify it
   as an outdated source and state its publication date in the proposal; do not
   present stale material as current.

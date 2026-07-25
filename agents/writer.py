@@ -70,6 +70,21 @@ def parse_proposal_draft(raw_output: str) -> ProposalDraft:
         raise ValueError(f"Invalid ProposalDraft output: {exc}") from exc
 
 
+def build_writer_retry_prompt(
+    original_prompt: str,
+    validation_error: ValueError,
+) -> str:
+    """Request one corrected draft using the validation error as feedback."""
+    return (
+        f"{original_prompt}\n\n"
+        "# Validation Correction\n\n"
+        "Your previous ProposalDraft failed validation:\n"
+        f"{validation_error}\n\n"
+        "Return the complete corrected JSON object only. Merge duplicate or "
+        "overlapping key_claims to satisfy limits; do not silently truncate them."
+    )
+
+
 def validate_proposal_source_ids(
     proposal: ProposalDraft,
     writer_input: WriterInput,
@@ -125,6 +140,13 @@ class WriterAgent(BaseAgent):
         prompt = build_writer_prompt(writer_input)
         llm_client = self._llm_client or create_default_writer_llm()
         raw_output = llm_client.generate_json(prompt)
-        proposal = parse_proposal_draft(raw_output)
-        validate_proposal_source_ids(proposal, writer_input)
-        return proposal
+        try:
+            proposal = parse_proposal_draft(raw_output)
+            validate_proposal_source_ids(proposal, writer_input)
+            return proposal
+        except ValueError as exc:
+            retry_prompt = build_writer_retry_prompt(prompt, exc)
+            retry_output = llm_client.generate_json(retry_prompt)
+            proposal = parse_proposal_draft(retry_output)
+            validate_proposal_source_ids(proposal, writer_input)
+            return proposal
