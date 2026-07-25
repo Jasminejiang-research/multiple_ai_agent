@@ -1101,14 +1101,14 @@ Market Research Agent 和 Competitor Agent 可以查互联网，但必须受控�
 
 ##### 9.2 Web Search Tool Interface
 
-- [ ] 创建 `tools/web_search.py`。
-- [ ] 定义 `search_web(query, allowed_domains=None, recency=None, max_results=5)`。
-- [ ] 初期可实现 mock search，避免马上接真实 API。
-- [ ] 返回 list of WebSearchResult。
-- [ ] 记录 query。
-- [ ] 记录 timestamp。
-- [ ] 写 mock test。
-- [ ] 提交 commit：`feat: add controlled web search interface`。
+- [x] 创建 `tools/web_search.py`。
+- [x] 定义 `search_web(query, allowed_domains=None, recency=None, max_results=5)`。
+- [x] 初期可实现 mock search，避免马上接真实 API。
+- [x] 返回 list of WebSearchResult。
+- [x] 记录 query。
+- [x] 记录 timestamp。
+- [x] 写 mock test。
+- [x] 提交 commit：`feat: add controlled web search interface`。
 
 
 
