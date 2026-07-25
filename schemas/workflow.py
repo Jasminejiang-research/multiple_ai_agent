@@ -298,6 +298,13 @@ class ProposalDraft(BaseModel):
         str,
         Field(min_length=2, max_length=120, description="Working proposal title."),
     ]
+    global_source_ids: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            description="Deduplicated source IDs cited across all proposal sections.",
+        ),
+    ]
     executive_summary: ProposalSection
     problem: ProposalSection
     target_customer: ProposalSection
@@ -314,13 +321,18 @@ class ProposalDraft(BaseModel):
 
     @model_validator(mode="after")
     def ensure_fixed_sections_match_fields(self) -> "ProposalDraft":
-        """Require each proposal field to contain its matching fixed title."""
+        """Validate section titles and build the proposal-wide source list."""
+        global_source_ids: list[str] = []
         for title, field_name in SECTION_FIELD_BY_TITLE.items():
             section = getattr(self, field_name)
             if section.title != title:
                 raise ValueError(
                     f"ProposalDraft.{field_name} must have title {title!r}."
                 )
+            for source_id in section.source_ids:
+                if source_id not in global_source_ids:
+                    global_source_ids.append(source_id)
+        self.global_source_ids = global_source_ids
         return self
 
 

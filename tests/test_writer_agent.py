@@ -178,6 +178,8 @@ class WriterAgentTests(unittest.TestCase):
         self.assertIn("confidence` to `low`", prompt)
         self.assertIn("metadata.stale", prompt)
         self.assertIn("state its publication date", prompt)
+        self.assertIn("top-level `global_source_ids`", prompt)
+        self.assertIn("`financial_assumptions.key_claims` to at most 8 items", prompt)
 
     def test_writer_agent_returns_validated_proposal_draft(self) -> None:
         """The Writer parses mock JSON into a logged, 13-section proposal."""
@@ -192,6 +194,10 @@ class WriterAgentTests(unittest.TestCase):
         self.assertEqual(proposal.financial_assumptions.confidence, "low")
         self.assertEqual(
             proposal.financial_assumptions.source_ids,
+            ["framework-unit-economics"],
+        )
+        self.assertEqual(
+            proposal.global_source_ids,
             ["framework-unit-economics"],
         )
         self.assertEqual(proposal.market_opportunity.source_ids, [])
