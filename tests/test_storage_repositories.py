@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from storage.db import Base
 from storage.repositories import (
+    add_run_token_usage,
     create_run,
+    get_latest_node_input,
     get_run,
     list_runs,
     save_agent_output,
@@ -79,6 +81,75 @@ def test_save_node_output(session: Session) -> None:
     assert fetched is not None
     assert len(fetched.node_outputs) == 1
     assert fetched.node_outputs[0].output_snapshot == {"outline": "sample outline"}
+
+
+def test_latest_revision_input_is_a_resumable_checkpoint(session: Session) -> None:
+    """Only the latest persisted Revision input should be resumed."""
+    create_run(session, run_id="run-revision-checkpoint")
+    save_node_output(
+        session,
+        run_id="run-revision-checkpoint",
+        node_name="revision",
+        input_snapshot={"proposal_draft": {"title": "old"}},
+    )
+    save_node_output(
+        session,
+        run_id="run-revision-checkpoint",
+        node_name="revision",
+        input_snapshot={"proposal_draft": {"title": "latest"}},
+    )
+
+    checkpoint = get_latest_node_input(
+        session,
+        run_id="run-revision-checkpoint",
+        node_name="revision",
+    )
+
+    assert checkpoint == {"proposal_draft": {"title": "latest"}}
+
+
+def test_add_run_token_usage_accumulates_requests_retries_and_cost(
+    session: Session,
+) -> None:
+    """Run history should expose free-tier request and token consumption."""
+    create_run(session, run_id="run-usage-001")
+
+    add_run_token_usage(
+        session,
+        "run-usage-001",
+        {
+            "request_count": 2,
+            "retry_count": 1,
+            "prompt_tokens": 100,
+            "output_tokens": 20,
+            "total_tokens": 120,
+            "approximate_cost": 0.001,
+        },
+    )
+    add_run_token_usage(
+        session,
+        "run-usage-001",
+        {
+            "request_count": 1,
+            "retry_count": 0,
+            "prompt_tokens": 50,
+            "output_tokens": 10,
+            "total_tokens": 60,
+            "approximate_cost": 0.0005,
+        },
+    )
+
+    run = get_run(session, "run-usage-001")
+    assert run is not None
+    assert run.token_usage == {
+        "request_count": 3,
+        "retry_count": 1,
+        "prompt_tokens": 150,
+        "output_tokens": 30,
+        "total_tokens": 180,
+        "approximate_cost": 0.0015,
+    }
+    assert run.approximate_cost == 0.0015
 
 
 def test_save_agent_output(session: Session) -> None:

@@ -12,6 +12,12 @@ from schemas.source import SourceRecord
 
 AgentRole = Literal["research", "strategy", "finance", "writer", "critic"]
 ResearchConfidence = Literal["high", "medium", "low"]
+EvidenceMode = Literal[
+    "rag_and_web",
+    "rag_only",
+    "web_only",
+    "no_external_evidence",
+]
 
 
 class SupervisorTask(BaseModel):
@@ -501,10 +507,49 @@ class WriterInput(BaseModel):
     evidence_chunks: Annotated[
         list[EvidenceChunk],
         Field(
-            min_length=1,
+            default_factory=list,
             description=(
                 "Filtered, source-traceable knowledge-base evidence available "
-                "for proposal claims."
+                "for proposal claims; empty enables an explicit degraded mode."
             ),
         ),
     ]
+    evidence_mode: Annotated[
+        EvidenceMode,
+        Field(
+            default="no_external_evidence",
+            description="Automatically derived evidence availability mode.",
+        ),
+    ]
+    low_confidence_required: Annotated[
+        bool,
+        Field(
+            default=True,
+            description=(
+                "Whether unsupported sections must be explicitly marked low confidence."
+            ),
+        ),
+    ]
+    evidence_was_budget_limited: Annotated[
+        bool,
+        Field(
+            default=False,
+            description="Whether RAG evidence was ranked or shortened for prompt budget.",
+        ),
+    ]
+
+    @model_validator(mode="after")
+    def derive_evidence_mode(self) -> "WriterInput":
+        """Make Web-only and evidence-free degradation explicit to the Writer."""
+        has_rag = bool(self.evidence_chunks)
+        has_web = bool(self.web_sources)
+        if has_rag and has_web:
+            self.evidence_mode = "rag_and_web"
+        elif has_rag:
+            self.evidence_mode = "rag_only"
+        elif has_web:
+            self.evidence_mode = "web_only"
+        else:
+            self.evidence_mode = "no_external_evidence"
+        self.low_confidence_required = not has_rag
+        return self

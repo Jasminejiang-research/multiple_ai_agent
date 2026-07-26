@@ -12,11 +12,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from storage.repositories import (
+    add_run_token_usage,
     save_agent_output,
     save_error,
     save_node_output,
     update_run_status,
 )
+from workflow.llm_client import capture_llm_usage
 from workflow.state import WorkflowState
 
 WORKFLOW_VERSION = "workflow-v1"
@@ -104,10 +106,30 @@ def with_workflow_logging(
             )
             session.commit()
 
+        usage_tracker = None
         try:
-            output = node(state)
+            with capture_llm_usage() as usage_tracker:
+                output = node(state)
         except Exception as exc:
+            token_usage = (
+                usage_tracker.as_dict()
+                if usage_tracker is not None
+                else None
+            )
             with session_factory() as session:
+                save_node_output(
+                    session,
+                    run_id=run_id,
+                    node_name=step_name,
+                    input_snapshot=input_snapshot,
+                    output_snapshot={
+                        "status": "failed",
+                        "error_type": type(exc).__name__,
+                    },
+                    token_usage=token_usage,
+                )
+                if token_usage is not None:
+                    add_run_token_usage(session, run_id, token_usage)
                 save_error(
                     session,
                     run_id=run_id,
@@ -120,6 +142,7 @@ def with_workflow_logging(
                 session.commit()
             raise
 
+        token_usage = usage_tracker.as_dict()
         completed_snapshot: dict[str, Any] = {
             "status": "completed",
             "output": serialize_for_log(output),
@@ -134,7 +157,9 @@ def with_workflow_logging(
                 node_name=step_name,
                 input_snapshot=input_snapshot,
                 output_snapshot=completed_snapshot,
+                token_usage=token_usage,
             )
+            add_run_token_usage(session, run_id, token_usage)
             session.commit()
 
         return output

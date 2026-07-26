@@ -14,6 +14,8 @@ from agents.base import AgentLogHook, BaseAgent
 from rag.citation_checker import check_citations, check_claim_has_source
 from schemas.source import SourceQuality
 from schemas.workflow import (
+    CRITIQUE_MAX_ISSUES,
+    CRITIQUE_MAX_MUST_FIX,
     PROPOSAL_SECTION_FIELD_NAMES,
     CritiqueIssue,
     CritiqueReport,
@@ -24,8 +26,11 @@ from workflow.llm_client import StructuredJsonLLM, create_default_llm_client
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 CRITIC_PROMPT_PATH = ROOT_DIR / "prompts" / "critic_agent.md"
-_ENFORCED_CLAIM_TYPES = frozenset({"market_size", "competitor", "trend"})
+_ENFORCED_CLAIM_TYPES = frozenset(
+    {"market_size", "competitor", "trend", "financial_benchmark"}
+)
 _LOW_SOURCE_QUALITIES = frozenset({SourceQuality.BLOG, SourceQuality.UNKNOWN})
+_SEVERITY_PRIORITY = {"critical": 4, "high": 3, "medium": 2, "low": 1}
 
 
 class CriticLLM(Protocol):
@@ -151,6 +156,74 @@ def _claim_source_ids(section: ProposalSection, claim: str) -> list[str]:
     ]
 
 
+def _budget_critique(
+    report: CritiqueReport,
+    issues: list[CritiqueIssue],
+    must_fix: list[str],
+) -> CritiqueReport:
+    """Keep revision input bounded while explicitly aggregating overflow."""
+    unique_issues: list[CritiqueIssue] = []
+    issue_keys: set[tuple[str, str, str]] = set()
+    for issue in issues:
+        key = (issue.section, issue.issue_type, issue.description)
+        if key not in issue_keys:
+            issue_keys.add(key)
+            unique_issues.append(issue)
+
+    if len(unique_issues) > CRITIQUE_MAX_ISSUES:
+        ranked = sorted(
+            enumerate(unique_issues),
+            key=lambda item: (
+                -_SEVERITY_PRIORITY[item[1].severity],
+                item[0],
+            ),
+        )
+        kept = [
+            issue
+            for _, issue in ranked[: CRITIQUE_MAX_ISSUES - 1]
+        ]
+        omitted = len(unique_issues) - len(kept)
+        affected_sections = sorted(
+            {issue.section for _, issue in ranked[CRITIQUE_MAX_ISSUES - 1 :]}
+        )
+        kept.append(
+            CritiqueIssue(
+                section="General",
+                severity="high",
+                issue_type="logic_gap",
+                description=(
+                    f"{omitted} additional critique issues were aggregated to "
+                    "stay within the free-tier revision budget; affected sections: "
+                    + ", ".join(affected_sections)
+                    + "."
+                ),
+                suggested_fix=(
+                    "Review the affected sections together and resolve repeated "
+                    "evidence, consistency, and clarity gaps as grouped concerns."
+                ),
+            )
+        )
+        unique_issues = kept
+
+    unique_must_fix = list(dict.fromkeys(must_fix))
+    if len(unique_must_fix) > CRITIQUE_MAX_MUST_FIX:
+        kept_must_fix = unique_must_fix[: CRITIQUE_MAX_MUST_FIX - 1]
+        omitted = len(unique_must_fix) - len(kept_must_fix)
+        kept_must_fix.append(
+            f"Resolve {omitted} additional related blocking issues aggregated "
+            "for the free-tier revision budget."
+        )
+        unique_must_fix = kept_must_fix
+
+    return CritiqueReport.model_validate(
+        {
+            "overall_score": report.overall_score,
+            "issues": [issue.model_dump() for issue in unique_issues],
+            "must_fix_before_export": unique_must_fix,
+        }
+    )
+
+
 def enforce_citation_requirements(
     proposal_draft: ProposalDraft,
     critique_report: CritiqueReport,
@@ -227,9 +300,7 @@ def enforce_citation_requirements(
                     )
                 )
 
-    return report.model_copy(
-        update={"issues": issues, "must_fix_before_export": must_fix}
-    )
+    return _budget_critique(report, issues, must_fix)
 
 
 class CriticAgent(BaseAgent):

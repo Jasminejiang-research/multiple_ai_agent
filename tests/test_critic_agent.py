@@ -7,6 +7,8 @@ import unittest
 from agents.base import AgentLogEvent
 from agents.critic import CriticAgent, build_critic_prompt
 from schemas.workflow import (
+    CRITIQUE_MAX_ISSUES,
+    CRITIQUE_MAX_MUST_FIX,
     PROPOSAL_SECTION_FIELD_NAMES,
     PROPOSAL_SECTION_TITLES,
     CritiqueReport,
@@ -80,6 +82,22 @@ def _empty_critique_json() -> str:
     ).model_dump_json()
 
 
+def _sourced_claim(
+    text: str,
+    claim_type: str,
+    *,
+    source_ids: list[str] | None = None,
+    content_anchor: str | None = None,
+) -> dict[str, object]:
+    return {
+        "text": text,
+        "claim_type": claim_type,
+        "evidence_status": "sourced_fact",
+        "source_ids": source_ids or [],
+        "content_anchor": content_anchor or text,
+    }
+
+
 def _citation_proposal() -> ProposalDraft:
     """Return a draft containing the three Sprint 9.7 claim categories."""
     proposal_data = _proposal_draft().model_dump()
@@ -88,21 +106,46 @@ def _citation_proposal() -> ProposalDraft:
             "Customer adoption is projected to grow by 20% annually across the "
             "target segment, but this statement has no supporting citation."
         ),
-        key_claims=["Customer adoption is projected to grow by 20% annually."],
+        key_claims=[
+            _sourced_claim(
+                "Customer adoption is projected to grow by 20% annually.",
+                "trend",
+                content_anchor=(
+                    "Customer adoption is projected to grow by 20% annually "
+                    "across the target segment"
+                ),
+            )
+        ],
     )
     proposal_data["market_opportunity"].update(
         content=(
             "The addressable market is estimated at €2 billion, but this market "
             "size statement currently has no supporting citation."
         ),
-        key_claims=["The addressable market is estimated at €2 billion."],
+        key_claims=[
+            _sourced_claim(
+                "The addressable market is estimated at €2 billion.",
+                "market_size",
+                content_anchor=(
+                    "The addressable market is estimated at €2 billion"
+                ),
+            )
+        ],
     )
     proposal_data["competitor_analysis"].update(
         content=(
             "The competitor list includes Acme and Beta, but the named companies "
             "currently have no supporting citation."
         ),
-        key_claims=["The competitor list includes Acme and Beta."],
+        key_claims=[
+            _sourced_claim(
+                "The competitor list includes Acme and Beta.",
+                "competitor",
+                content_anchor=(
+                    "The competitor list includes Acme and Beta"
+                ),
+            )
+        ],
     )
     return ProposalDraft.model_validate(proposal_data)
 
@@ -149,7 +192,6 @@ class CriticAgentTests(unittest.TestCase):
         self.assertEqual(
             {issue.issue_type for issue in report.issues},
             {
-                "missing_evidence",
                 "unsupported_market_claim",
                 "financial_inconsistency",
                 "weak_gtm",
@@ -185,6 +227,41 @@ class CriticAgentTests(unittest.TestCase):
         self.assertIn("trend", descriptions)
         self.assertEqual(len(report.must_fix_before_export), 3)
 
+    def test_critic_enforces_uncited_financial_benchmark(self) -> None:
+        """Financial benchmark claims receive the same high-severity treatment."""
+        proposal_data = _proposal_draft().model_dump()
+        proposal_data["financial_assumptions"].update(
+            content=(
+                "The gross margin benchmark is 60 percent, but the statement "
+                "currently has no supporting citation."
+            ),
+            key_claims=[
+                _sourced_claim(
+                    "The gross margin benchmark is 60 percent.",
+                    "financial_benchmark",
+                    content_anchor=(
+                        "The gross margin benchmark is 60 percent"
+                    ),
+                )
+            ],
+            source_ids=[],
+        )
+        agent = CriticAgent(llm_client=FakeCriticLLM(_empty_critique_json()))
+
+        report = agent.run(ProposalDraft.model_validate(proposal_data))
+
+        financial_issues = [
+            issue
+            for issue in report.issues
+            if "financial_benchmark" in issue.description
+        ]
+        self.assertEqual(len(financial_issues), 1)
+        self.assertEqual(financial_issues[0].severity, "high")
+        self.assertIn(
+            financial_issues[0].description,
+            report.must_fix_before_export,
+        )
+
     def test_critic_marks_low_quality_citation_medium_severity(self) -> None:
         """A cited blog or unknown source is not treated as strong evidence."""
         proposal_data = _proposal_draft().model_dump()
@@ -194,7 +271,15 @@ class CriticAgentTests(unittest.TestCase):
                 "on a current comparison of alternatives in the target segment."
             ),
             key_claims=[
-                "The competitor list includes Acme and Beta [web-blog-1]."
+                _sourced_claim(
+                    "The competitor list includes Acme and Beta [web-blog-1].",
+                    "competitor",
+                    source_ids=["web-blog-1"],
+                    content_anchor=(
+                        "The competitor list includes Acme and Beta "
+                        "[web-blog-1]"
+                    ),
+                )
             ],
             source_ids=["web-blog-1"],
         )
@@ -221,6 +306,43 @@ class CriticAgentTests(unittest.TestCase):
         self.assertEqual(enforced[0].severity, "medium")
         self.assertIn("web-blog-1", enforced[0].description)
         self.assertEqual(report.must_fix_before_export, [])
+
+    def test_critic_aggregates_overflow_within_revision_budget(self) -> None:
+        """Deterministic citation findings cannot make the revision prompt unbounded."""
+        initial = CritiqueReport(
+            overall_score=4.0,
+            issues=[
+                {
+                    "section": "General",
+                    "severity": "medium",
+                    "issue_type": "writing_quality",
+                    "description": (
+                        f"Distinct writing issue {index} requires a concrete edit."
+                    ),
+                    "suggested_fix": (
+                        f"Apply focused writing correction {index} before export."
+                    ),
+                }
+                for index in range(CRITIQUE_MAX_ISSUES)
+            ],
+            must_fix_before_export=[
+                f"Resolve blocking issue {index}."
+                for index in range(CRITIQUE_MAX_MUST_FIX)
+            ],
+        )
+        agent = CriticAgent(llm_client=FakeCriticLLM(initial.model_dump_json()))
+
+        report = agent.run(_citation_proposal())
+
+        self.assertEqual(len(report.issues), CRITIQUE_MAX_ISSUES)
+        self.assertEqual(
+            len(report.must_fix_before_export),
+            CRITIQUE_MAX_MUST_FIX,
+        )
+        self.assertTrue(
+            any("aggregated" in issue.description for issue in report.issues)
+        )
+        self.assertIn("aggregated", report.must_fix_before_export[-1])
 
 
 if __name__ == "__main__":

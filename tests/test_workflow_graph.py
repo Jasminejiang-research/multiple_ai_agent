@@ -79,7 +79,7 @@ def _section_drafts() -> SectionDrafts:
                 ),
                 "key_claims": [
                     f"The {title} section depends on brief-supported positioning."
-                ],
+                ] if title != "Competitor Analysis" else [],
                 "source_ids": [],
                 "confidence": "medium",
             }

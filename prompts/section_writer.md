@@ -41,7 +41,15 @@ The JSON must match this shape:
     {
       "title": "Executive Summary",
       "content": "string",
-      "key_claims": ["string"],
+      "key_claims": [
+        {
+          "text": "cautious claim text",
+          "claim_type": "market_size | competitor | trend | financial_benchmark | customer | product | operational | regulatory | general",
+          "evidence_status": "assumption | unsupported | needs_validation",
+          "source_ids": [],
+          "content_anchor": "exact matching prose excerpt"
+        }
+      ],
       "source_ids": [],
       "confidence": "high | medium | low"
     }
@@ -70,6 +78,9 @@ The `sections` array must contain exactly these titles, in this order:
 
 - Each section should be clear, specific, and suitable for a business proposal draft.
 - Claims must be traceable to the user brief or marked as assumptions.
+- Because this node receives no external evidence, do not label any claim
+  `sourced_fact`; non-factual claims are evidence gaps and require `low`
+  section confidence.
 - `source_ids` should stay empty unless source IDs are explicitly provided in the input.
 - Prefer "needs validation" language over unsupported certainty for market, competitor, and financial claims.
 

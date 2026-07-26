@@ -73,21 +73,6 @@ def parse_supervisor_plan(raw_output: str) -> SupervisorPlan:
         raise ValueError(f"Invalid SupervisorPlan output: {exc}") from exc
 
 
-def build_supervisor_retry_prompt(
-    original_prompt: str,
-    validation_error: ValueError,
-) -> str:
-    """Request one corrected plan using the validation error as feedback."""
-    return (
-        f"{original_prompt}\n\n"
-        "# Validation Correction\n\n"
-        "Your previous SupervisorPlan failed schema validation:\n"
-        f"{validation_error}\n\n"
-        "Return the complete corrected JSON object only. Preserve required inputs "
-        "by merging related input_requirements; do not silently truncate them."
-    )
-
-
 class SupervisorAgent(BaseAgent):
     """Agent that decomposes a validated brief into controlled downstream tasks."""
 
@@ -115,9 +100,4 @@ class SupervisorAgent(BaseAgent):
         llm_client = self._llm_client or create_default_supervisor_llm()
         prompt = build_supervisor_prompt(input_data)
         raw_output = llm_client.generate_json(prompt)
-        try:
-            return parse_supervisor_plan(raw_output)
-        except ValueError as exc:
-            retry_prompt = build_supervisor_retry_prompt(prompt, exc)
-            retry_output = llm_client.generate_json(retry_prompt)
-            return parse_supervisor_plan(retry_output)
+        return parse_supervisor_plan(raw_output)

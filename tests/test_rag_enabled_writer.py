@@ -119,7 +119,19 @@ def _proposal_json(source_id: str) -> str:
                     "and labels uncertain statements for later validation."
                 )
             ),
-            "key_claims": [cited_claim] if is_financial_section else [],
+            "key_claims": (
+                [
+                    {
+                        "text": cited_claim,
+                        "claim_type": "financial_benchmark",
+                        "evidence_status": "sourced_fact",
+                        "source_ids": [source_id],
+                        "content_anchor": cited_claim,
+                    }
+                ]
+                if is_financial_section
+                else []
+            ),
             "source_ids": [source_id] if is_financial_section else [],
             "confidence": "medium",
         }

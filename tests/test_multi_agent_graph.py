@@ -157,7 +157,11 @@ def _proposal() -> ProposalDraft:
                 f"This {title} section uses only validated analysis packets and "
                 "labels uncertain statements as assumptions requiring validation."
             ),
-            "key_claims": [f"The {title} reasoning comes from supplied analysis."],
+            "key_claims": (
+                []
+                if title == "Competitor Analysis"
+                else [f"The {title} reasoning comes from supplied analysis."]
+            ),
             "source_ids": [],
             "confidence": "medium",
         }
@@ -306,7 +310,12 @@ def test_multi_agent_graph_runs_all_agents_and_persists_outputs() -> None:
         assert "https://example.com/market" in llms["research"].prompts[0]
         assert "https://example.com/competitor" in llms["research"].prompts[0]
 
-    assert all(len(llm.prompts) == 1 for llm in llms.values())
+    assert llms["supervisor"].prompts == []
+    assert all(
+        len(llm.prompts) == 1
+        for name, llm in llms.items()
+        if name != "supervisor"
+    )
     with session_scope() as session:
         run = get_run(session, "multi-agent-run")
         assert run is not None

@@ -21,7 +21,7 @@ You will receive a JSON object with:
 - Discuss break-even qualitatively by naming the assumptions that would determine it.
 - Mark confidence as `high`, `medium`, or `low` based only on the available input.
 - Put evidence-dependent financial claims into `unsupported_financial_claims`.
-- Add assumptions that need user confirmation to `needs_human_review`.
+- Add assumptions that need user confirmation to `needs_human_review`; keep the list to at most 8 items by merging related confirmation questions.
 
 # Forbidden Actions
 

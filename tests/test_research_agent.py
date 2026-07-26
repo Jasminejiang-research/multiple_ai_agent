@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import unittest
 
+import requests
 from pydantic import ValidationError
 
 from agents.base import AgentLogEvent
 from agents.research import ResearchAgent, build_research_prompt
 from schemas.agent_outputs import ResearchAnalysis
 from schemas.source import SourceQuality, WebSearchResult
+from tools.tavily_search import (
+    WebSearchConfigurationError,
+    WebSearchProviderError,
+    WebSearchRateLimitError,
+)
 
 
 def _complete_brief() -> dict[str, str]:
@@ -110,6 +116,40 @@ class FakeWebSearch:
         ]
 
 
+class SequencedWebSearch:
+    """Return or raise one configured outcome for each controlled query."""
+
+    def __init__(self, outcomes: list[object]) -> None:
+        self.outcomes = list(outcomes)
+        self.queries: list[str] = []
+
+    def __call__(
+        self,
+        query: str,
+        allowed_domains: list[str] | None,
+        recency: str | None,
+        max_results: int,
+    ) -> list[WebSearchResult]:
+        self.queries.append(query)
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome  # type: ignore[return-value]
+
+
+def _web_result(identifier: str) -> WebSearchResult:
+    """Build one valid result for partial-provider-failure tests."""
+    return WebSearchResult(
+        title=f"Evidence {identifier}",
+        url=f"https://example.com/{identifier}",
+        publisher="Example Research",
+        published_date="2026-06-01",
+        summary="A source that remains usable when the other query fails.",
+        relevance_score=0.9,
+        source_quality=SourceQuality.RESEARCH_ORG,
+    )
+
+
 class ResearchAgentTests(unittest.TestCase):
     """Tests for Research prompt construction and validated analysis output."""
 
@@ -158,6 +198,110 @@ class ResearchAgentTests(unittest.TestCase):
 
         with self.assertRaises(ValidationError):
             ResearchAnalysis.model_validate(valid_payload)
+
+    def test_provider_failure_keeps_results_from_the_other_query(self) -> None:
+        """A failed market query does not discard competitor evidence."""
+        web_search = SequencedWebSearch(
+            [
+                WebSearchRateLimitError("Tavily search rate limit reached."),
+                [_web_result("competitor")],
+            ]
+        )
+        agent = ResearchAgent(
+            llm_client=FakeResearchLLM(_research_analysis_json()),
+            web_search_tool=web_search,
+        )
+
+        with self.assertLogs("agents.research", level="WARNING"):
+            sources = agent.collect_web_sources(_complete_brief())
+
+        self.assertEqual(len(web_search.queries), 2)
+        self.assertEqual(len(sources), 1)
+        self.assertEqual(sources[0].agent_name, "Competitor Agent")
+        self.assertEqual(sources[0].url, "https://example.com/competitor")
+        self.assertEqual(len(agent.web_search_warnings), 1)
+        self.assertEqual(
+            agent.web_search_warnings[0].error_type,
+            "WebSearchRateLimitError",
+        )
+
+    def test_each_expected_external_failure_degrades_independently(self) -> None:
+        """Configuration and timeout failures become two explicit warnings."""
+        web_search = SequencedWebSearch(
+            [
+                WebSearchConfigurationError("TAVILY_API_KEY is not set."),
+                requests.Timeout("Tavily request timed out."),
+            ]
+        )
+        agent = ResearchAgent(
+            llm_client=FakeResearchLLM(_research_analysis_json()),
+            web_search_tool=web_search,
+        )
+
+        with self.assertLogs("agents.research", level="WARNING"):
+            sources = agent.collect_web_sources(_complete_brief())
+
+        self.assertEqual(sources, [])
+        self.assertEqual(len(web_search.queries), 2)
+        self.assertEqual(
+            [warning.error_type for warning in agent.web_search_warnings],
+            ["WebSearchConfigurationError", "Timeout"],
+        )
+
+    def test_provider_warning_is_given_to_research_llm(self) -> None:
+        """The LLM is told not to invent evidence for the unavailable scope."""
+        llm = FakeResearchLLM(_research_analysis_json())
+        web_search = SequencedWebSearch(
+            [
+                WebSearchProviderError("Tavily service unavailable."),
+                [_web_result("competitor")],
+            ]
+        )
+        agent = ResearchAgent(llm_client=llm, web_search_tool=web_search)
+
+        with self.assertLogs("agents.research", level="WARNING"):
+            agent.run(_complete_brief())
+
+        self.assertIn("Web Research Degradation Warnings", llm.prompts[0])
+        self.assertIn("Tavily service unavailable.", llm.prompts[0])
+        self.assertIn("Do not infer or invent the missing results", llm.prompts[0])
+
+    def test_invalid_provider_result_schema_is_not_swallowed(self) -> None:
+        """Malformed data is a contract bug, not an external-service fallback."""
+        web_search = SequencedWebSearch(
+            [
+                [{"title": "", "url": "", "summary": ""}],
+                [_web_result("unused")],
+            ]
+        )
+        agent = ResearchAgent(
+            llm_client=FakeResearchLLM(_research_analysis_json()),
+            web_search_tool=web_search,
+        )
+
+        with self.assertRaises(ValidationError):
+            agent.collect_web_sources(_complete_brief())
+
+        self.assertEqual(len(web_search.queries), 1)
+        self.assertEqual(agent.web_search_warnings, ())
+
+    def test_programming_error_is_not_swallowed(self) -> None:
+        """Unexpected code errors still fail fast for diagnosis."""
+        web_search = SequencedWebSearch(
+            [
+                RuntimeError("test double bug"),
+                [_web_result("unused")],
+            ]
+        )
+        agent = ResearchAgent(
+            llm_client=FakeResearchLLM(_research_analysis_json()),
+            web_search_tool=web_search,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "test double bug"):
+            agent.collect_web_sources(_complete_brief())
+
+        self.assertEqual(len(web_search.queries), 1)
 
 
 if __name__ == "__main__":

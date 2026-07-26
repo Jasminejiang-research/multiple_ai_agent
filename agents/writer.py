@@ -8,6 +8,10 @@ from typing import Any, Protocol
 from pydantic import ValidationError
 
 from agents.base import AgentLogHook, BaseAgent
+from rag.citation_checker import (
+    validate_proposal_citations,
+    validate_proposal_source_allowlist,
+)
 from schemas.agent_outputs import WriterInput
 from schemas.workflow import PROPOSAL_SECTION_FIELD_NAMES, ProposalDraft
 from workflow.llm_client import StructuredJsonLLM, create_default_llm_client
@@ -70,21 +74,6 @@ def parse_proposal_draft(raw_output: str) -> ProposalDraft:
         raise ValueError(f"Invalid ProposalDraft output: {exc}") from exc
 
 
-def build_writer_retry_prompt(
-    original_prompt: str,
-    validation_error: ValueError,
-) -> str:
-    """Request one corrected draft using the validation error as feedback."""
-    return (
-        f"{original_prompt}\n\n"
-        "# Validation Correction\n\n"
-        "Your previous ProposalDraft failed validation:\n"
-        f"{validation_error}\n\n"
-        "Return the complete corrected JSON object only. Merge duplicate or "
-        "overlapping key_claims to satisfy limits; do not silently truncate them."
-    )
-
-
 def validate_proposal_source_ids(
     proposal: ProposalDraft,
     writer_input: WriterInput,
@@ -94,14 +83,25 @@ def validate_proposal_source_ids(
         chunk.source_id for chunk in writer_input.evidence_chunks
     }
     allowed_source_ids.update(source.source_id for source in writer_input.web_sources)
+    validate_proposal_source_allowlist(
+        proposal,
+        allowed_source_ids,
+        output_name="ProposalDraft",
+    )
+
+
+def apply_evidence_confidence_floor(
+    proposal: ProposalDraft,
+    writer_input: WriterInput,
+) -> ProposalDraft:
+    """Deterministically expose degraded evidence through section confidence."""
+    if not writer_input.low_confidence_required:
+        return proposal
     for field_name in PROPOSAL_SECTION_FIELD_NAMES:
         section = getattr(proposal, field_name)
-        unknown_source_ids = sorted(set(section.source_ids) - allowed_source_ids)
-        if unknown_source_ids:
-            raise ValueError(
-                f"ProposalDraft.{field_name} cites unknown source IDs: "
-                + ", ".join(unknown_source_ids)
-            )
+        if writer_input.evidence_mode == "no_external_evidence" or not section.source_ids:
+            section.confidence = "low"
+    return proposal
 
 
 class WriterAgent(BaseAgent):
@@ -139,14 +139,31 @@ class WriterAgent(BaseAgent):
 
         prompt = build_writer_prompt(writer_input)
         llm_client = self._llm_client or create_default_writer_llm()
-        raw_output = llm_client.generate_json(prompt)
-        try:
-            proposal = parse_proposal_draft(raw_output)
-            validate_proposal_source_ids(proposal, writer_input)
-            return proposal
-        except ValueError as exc:
-            retry_prompt = build_writer_retry_prompt(prompt, exc)
-            retry_output = llm_client.generate_json(retry_prompt)
-            proposal = parse_proposal_draft(retry_output)
-            validate_proposal_source_ids(proposal, writer_input)
-            return proposal
+        allowed_source_ids = {
+            chunk.source_id for chunk in writer_input.evidence_chunks
+        }
+        allowed_source_ids.update(
+            source.source_id for source in writer_input.web_sources
+        )
+
+        def validate_writer_output(candidate: ProposalDraft) -> None:
+            """Aggregate unknown IDs and missing markers in one correction."""
+            validate_proposal_citations(
+                ProposalDraft.model_validate(candidate),
+                allowed_source_ids=allowed_source_ids,
+                output_name="ProposalDraft",
+            )
+
+        validated_generator = getattr(
+            llm_client,
+            "generate_json_validated",
+            None,
+        )
+        if callable(validated_generator):
+            raw_output = validated_generator(prompt, validate_writer_output)
+        else:
+            raw_output = llm_client.generate_json(prompt)
+        proposal = parse_proposal_draft(raw_output)
+        proposal = apply_evidence_confidence_floor(proposal, writer_input)
+        validate_writer_output(proposal)
+        return proposal

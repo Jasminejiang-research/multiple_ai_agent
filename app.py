@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -14,7 +15,13 @@ from dotenv import load_dotenv
 from schemas.proposal_schema import BusinessProposal
 from workflow.llm_client import LLMClient
 from storage.db import Base, engine, get_session
-from storage.repositories import create_run, get_run, list_runs, update_run_status
+from storage.repositories import (
+    create_run,
+    get_latest_node_input,
+    get_run,
+    list_runs,
+    update_run_status,
+)
 from workflow.graph import build_proposal_workflow_graph
 from workflow.logging import (
     MULTI_AGENT_PROMPT_VERSION,
@@ -23,13 +30,20 @@ from workflow.logging import (
     WORKFLOW_VERSION,
     step_names_for_workflow,
     summarize_step_statuses,
+    with_workflow_logging,
 )
 from workflow.multi_agent_graph import build_multi_agent_workflow_graph
+from workflow.nodes import export_node, revision_node
+from workflow.preflight import run_preflight_checks
+from workflow.run_budget import run_budget
+from tools.tavily_search import WebSearchConfigurationError
 
 ROOT_DIR = Path(__file__).resolve().parent
 PROMPT_PATH = ROOT_DIR / "prompts" / "single_agent_proposal.md"
 OUTPUT_DIR = ROOT_DIR / "outputs"
 MODEL_NAME = "gemini-2.5-flash"
+DEFAULT_RUN_MAX_REQUESTS = 8
+DEFAULT_RUN_MAX_TOTAL_TOKENS = 120_000
 
 
 @dataclass(frozen=True)
@@ -148,12 +162,39 @@ def summarize_web_sources(sources: list[Any]) -> list[dict[str, Any]]:
 
 def load_api_key() -> str:
     load_dotenv(ROOT_DIR / ".env")
-    import os
 
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("GEMINI_API_KEY is not set in .env")
     return api_key
+
+
+def _positive_int_setting(name: str, default: int) -> int:
+    """Read one positive free-tier budget setting from the environment."""
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer.") from exc
+    if value < 1:
+        raise ValueError(f"{name} must be positive.")
+    return value
+
+
+def _run_budget_settings() -> tuple[int, int]:
+    load_dotenv(ROOT_DIR / ".env")
+    return (
+        _positive_int_setting(
+            "LLM_RUN_MAX_REQUESTS",
+            DEFAULT_RUN_MAX_REQUESTS,
+        ),
+        _positive_int_setting(
+            "LLM_RUN_MAX_TOTAL_TOKENS",
+            DEFAULT_RUN_MAX_TOTAL_TOKENS,
+        ),
+    )
 
 
 def load_system_instruction() -> str:
@@ -333,8 +374,18 @@ def save_proposal_markdown(proposal: BusinessProposal, output_dir: Path | None =
 
 def run_proposal_pipeline(user_idea: str) -> tuple[BusinessProposal, Path, str]:
     """End-to-end: generate structured proposal and persist Markdown report."""
-    client = create_client()
-    proposal = generate_proposal(client, user_idea)
+    run_preflight_checks(
+        knowledge_base_dir=ROOT_DIR / "knowledge_base",
+        output_dir=OUTPUT_DIR,
+        require_knowledge_base=False,
+    )
+    max_requests, max_total_tokens = _run_budget_settings()
+    with run_budget(
+        max_requests=max_requests,
+        max_total_tokens=max_total_tokens,
+    ):
+        client = create_client()
+        proposal = generate_proposal(client, user_idea)
     markdown = proposal_to_markdown(proposal)
     output_path = save_proposal_markdown(proposal)
     return proposal, output_path, markdown
@@ -490,6 +541,11 @@ def run_workflow_pipeline(user_brief: dict[str, str]) -> WorkflowPipelineResult:
     Raises:
         ValueError: If the input is incomplete or no Markdown was produced.
     """
+    preflight = run_preflight_checks(
+        knowledge_base_dir=ROOT_DIR / "knowledge_base",
+        output_dir=OUTPUT_DIR,
+        require_knowledge_base=False,
+    )
     _ensure_run_history_tables()
     run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
     with get_session() as session:
@@ -506,7 +562,21 @@ def run_workflow_pipeline(user_brief: dict[str, str]) -> WorkflowPipelineResult:
         session.commit()
 
     graph = build_proposal_workflow_graph(logging_session_factory=get_session)
-    result = graph.invoke({"run_id": run_id, "user_brief": user_brief})
+    max_requests, max_total_tokens = _run_budget_settings()
+    with run_budget(
+        max_requests=max_requests,
+        max_total_tokens=max_total_tokens,
+    ) as budget:
+        result = graph.invoke(
+            {
+                "run_id": run_id,
+                "user_brief": user_brief,
+                "preflight_warnings": [
+                    issue.message for issue in preflight.warnings
+                ],
+            }
+        )
+        result["run_budget"] = budget.snapshot()
 
     if result.get("missing_info"):
         _set_run_status(run_id, "needs_input")
@@ -530,6 +600,11 @@ def run_workflow_pipeline(user_brief: dict[str, str]) -> WorkflowPipelineResult:
 
 def run_multi_agent_pipeline(user_brief: dict[str, str]) -> WorkflowPipelineResult:
     """Run and persist the controlled Supervisor-led multi-agent workflow."""
+    preflight = run_preflight_checks(
+        knowledge_base_dir=ROOT_DIR / "knowledge_base",
+        output_dir=OUTPUT_DIR,
+        allow_tavily_degradation=True,
+    )
     _ensure_run_history_tables()
     run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
     with get_session() as session:
@@ -545,8 +620,39 @@ def run_multi_agent_pipeline(user_brief: dict[str, str]) -> WorkflowPipelineResu
         update_run_status(session, run_id, "running")
         session.commit()
 
-    graph = build_multi_agent_workflow_graph(logging_session_factory=get_session)
-    result = graph.invoke({"run_id": run_id, "user_brief": user_brief})
+    graph_kwargs: dict[str, Any] = {
+        "logging_session_factory": get_session,
+    }
+    if not preflight.tavily_available:
+        def no_web_search(
+            query: str,
+            allowed_domains: list[str] | None,
+            recency: str | None,
+            max_results: int,
+        ) -> list[Any]:
+            """Explicit preflight degradation: no provider call is attempted."""
+            _ = (query, allowed_domains, recency, max_results)
+            raise WebSearchConfigurationError(
+                "Tavily disabled by preflight; continuing without Web evidence."
+            )
+
+        graph_kwargs["web_search_tool"] = no_web_search
+    graph = build_multi_agent_workflow_graph(**graph_kwargs)
+    max_requests, max_total_tokens = _run_budget_settings()
+    with run_budget(
+        max_requests=max_requests,
+        max_total_tokens=max_total_tokens,
+    ) as budget:
+        result = graph.invoke(
+            {
+                "run_id": run_id,
+                "user_brief": user_brief,
+                "preflight_warnings": [
+                    issue.message for issue in preflight.warnings
+                ],
+            }
+        )
+        result["run_budget"] = budget.snapshot()
 
     if result.get("missing_info"):
         _set_run_status(run_id, "needs_input")
@@ -561,6 +667,64 @@ def run_multi_agent_pipeline(user_brief: dict[str, str]) -> WorkflowPipelineResu
     return WorkflowPipelineResult(
         output_path=Path(result["output_path"]),
         markdown=markdown,
+        run_id=run_id,
+        step_statuses=_get_step_statuses(run_id),
+        sources=summarize_evidence_sources(result.get("evidence_chunks", [])),
+        web_sources=summarize_web_sources(result.get("web_sources", [])),
+    )
+
+
+def rerun_revision_from_checkpoint(run_id: str) -> WorkflowPipelineResult:
+    """Resume a persisted run at Revision and Export only.
+
+    The Revision node's logged input snapshot is the checkpoint. Research,
+    strategy, finance, retrieval, Writer, and Critic are never repeated.
+    """
+    run_preflight_checks(
+        knowledge_base_dir=ROOT_DIR / "knowledge_base",
+        output_dir=OUTPUT_DIR,
+        require_knowledge_base=False,
+        allow_tavily_degradation=True,
+    )
+    _ensure_run_history_tables()
+    with get_session() as session:
+        checkpoint = get_latest_node_input(
+            session,
+            run_id=run_id,
+            node_name="revision",
+        )
+    if checkpoint is None:
+        raise ValueError(
+            f"No persisted Revision checkpoint is available for run {run_id}."
+        )
+
+    checkpoint["run_id"] = run_id
+    _set_run_status(run_id, "running")
+    revision_runner = with_workflow_logging(
+        "revision",
+        revision_node,
+        get_session,
+    )
+    export_runner = with_workflow_logging(
+        "export",
+        export_node,
+        get_session,
+    )
+    configured_requests, max_total_tokens = _run_budget_settings()
+    with run_budget(
+        max_requests=min(configured_requests, 2),
+        max_total_tokens=max_total_tokens,
+    ) as budget:
+        revision_update = revision_runner(checkpoint)
+        resumed_state = {**checkpoint, **revision_update}
+        export_update = export_runner(resumed_state)
+        result = {**resumed_state, **export_update}
+        result["run_budget"] = budget.snapshot()
+
+    _set_run_status(run_id, "completed")
+    return WorkflowPipelineResult(
+        output_path=Path(result["output_path"]),
+        markdown=result["final_markdown"],
         run_id=run_id,
         step_statuses=_get_step_statuses(run_id),
         sources=summarize_evidence_sources(result.get("evidence_chunks", [])),
@@ -694,6 +858,24 @@ def _render_run_detail(st_module: Any, run_id: str) -> None:
         st_module.success(f"Final output path: `{detail.final_output_path}`")
     else:
         st_module.caption("Final output path not saved yet.")
+
+    if detail.status == "failed" and st_module.button(
+        "Retry Revision only",
+        key=f"retry_revision_{detail.run_id}",
+        use_container_width=True,
+    ):
+        try:
+            with st_module.spinner(
+                "Reloading the Revision checkpoint; prior agents will not rerun…"
+            ):
+                resumed = rerun_revision_from_checkpoint(detail.run_id)
+            st_module.session_state["markdown"] = resumed.markdown
+            st_module.session_state["output_path"] = str(resumed.output_path)
+            st_module.session_state["download_name"] = resumed.output_path.name
+            st_module.session_state["workflow_run_id"] = resumed.run_id
+            st_module.success("Revision checkpoint resumed and draft exported.")
+        except Exception as exc:
+            st_module.error(f"Revision-only retry failed: {exc}")
 
     st_module.divider()
 

@@ -8,13 +8,18 @@ Review one validated `ProposalDraft` and return a concrete, actionable `Critique
 
 # Inputs
 
-You will receive one complete `ProposalDraft` JSON object containing a title and exactly 13 proposal sections. Each section includes `content`, `key_claims`, `source_ids`, and `confidence`. When controlled web research was used, you will also receive source metadata containing each source's `source_id` and `source_quality`.
+You will receive one complete `ProposalDraft` JSON object containing a title and exactly 13 proposal sections. Each section includes `content`, structured `key_claims`, `source_ids`, and `confidence`. Every key claim declares `text`, `claim_type`, `evidence_status`, `source_ids`, and `content_anchor`. When controlled web research was used, you will also receive source metadata containing each source's `source_id` and `source_quality`.
 
 # Allowed Actions
 
 - Review every section for internal logic and consistency.
-- Require an exact inline `[source_id]` citation for every market-size claim,
-  competitor list, and trend claim.
+- Require an exact inline `[source_id]` citation in both anchored prose and
+  claim text for every claim explicitly classified `evidence_status:
+  sourced_fact`, including financial benchmarks.
+- Do not require citations from `assumption`, `unsupported`, or
+  `needs_validation` claims based on keywords alone. Instead verify that they
+  remain cautious, use low section confidence, and are treated as evidence
+  gaps.
 - Mark a required claim with no citation as `high` severity.
 - Mark a required claim that relies on a `blog` or `unknown` quality source as
   `medium` severity.

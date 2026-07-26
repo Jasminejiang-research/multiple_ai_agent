@@ -58,6 +58,40 @@ def update_run_status(session: Session, run_id: str, status: str) -> RunRecord:
     return run
 
 
+def add_run_token_usage(
+    session: Session,
+    run_id: str,
+    token_usage: dict[str, int | float],
+) -> RunRecord:
+    """Accumulate one node's LLM usage and approximate cost on its run."""
+    run = get_run(session, run_id)
+    if run is None:
+        raise ValueError(f"Run not found: {run_id}")
+
+    aggregate = dict(run.token_usage or {})
+    for key in (
+        "request_count",
+        "retry_count",
+        "prompt_tokens",
+        "output_tokens",
+        "total_tokens",
+    ):
+        aggregate[key] = int(aggregate.get(key, 0)) + int(
+            token_usage.get(key, 0)
+        )
+    node_cost = float(token_usage.get("approximate_cost", 0.0))
+    aggregate["approximate_cost"] = round(
+        float(aggregate.get("approximate_cost", 0.0)) + node_cost,
+        8,
+    )
+    run.token_usage = aggregate
+    run.approximate_cost = round(float(run.approximate_cost or 0.0) + node_cost, 8)
+    run.updated_at = utc_now()
+    session.flush()
+    session.refresh(run)
+    return run
+
+
 def save_node_output(
     session: Session,
     *,
@@ -185,6 +219,30 @@ def list_runs(session: Session, *, limit: int = 20) -> list[RunRecord]:
         .limit(limit)
     )
     return list(session.scalars(statement))
+
+
+def get_latest_node_input(
+    session: Session,
+    *,
+    run_id: str,
+    node_name: str,
+) -> dict[str, Any] | None:
+    """Load the latest persisted node input as a resumable checkpoint."""
+    _require_run(session, run_id)
+    statement = (
+        select(NodeOutput)
+        .where(
+            NodeOutput.run_id == run_id,
+            NodeOutput.node_name == node_name,
+            NodeOutput.input_snapshot.is_not(None),
+        )
+        .order_by(NodeOutput.created_at.desc(), NodeOutput.id.desc())
+        .limit(1)
+    )
+    node_output = session.scalar(statement)
+    if node_output is None or node_output.input_snapshot is None:
+        return None
+    return dict(node_output.input_snapshot)
 
 
 def _require_run(session: Session, run_id: str) -> RunRecord:

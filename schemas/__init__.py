@@ -20,8 +20,11 @@ from schemas.workflow import (
     ProposalOutlineSection,
     ProposalSection,
     RevisedProposal,
+    RevisedProposalPatch,
+    RevisedSectionPatch,
     SectionDraft,
     SectionDrafts,
+    StructuredClaim,
 )
 
 __all__ = [
@@ -37,10 +40,13 @@ __all__ = [
     "ResearchAnalysis",
     "ResearchFinding",
     "RevisedProposal",
+    "RevisedProposalPatch",
+    "RevisedSectionPatch",
     "SectionDraft",
     "SectionDrafts",
     "StrategyAnalysis",
     "StrategyInsight",
+    "StructuredClaim",
     "SourceQuality",
     "SourceRecord",
     "SupervisorPlan",

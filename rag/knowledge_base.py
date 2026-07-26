@@ -152,6 +152,4 @@ def retrieve_writer_evidence(
                 )
             )
 
-    if not merged:
-        raise ValueError("No relevant evidence was retrieved from the knowledge base.")
     return merged

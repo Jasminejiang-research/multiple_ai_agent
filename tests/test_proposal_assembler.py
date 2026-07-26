@@ -61,7 +61,8 @@ class ProposalAssemblerNodeTests(unittest.TestCase):
         preview = render_proposal_preview(proposal_draft)
 
         self.assertIn("# AI Tutor for MBA Students Proposal", preview)
-        self.assertEqual(preview.count("**Confidence:** medium"), 13)
+        self.assertEqual(preview.count("**Confidence:** low"), 13)
+        self.assertEqual(preview.count("**[ASSUMPTION]**"), 13)
         for title in PROPOSAL_SECTION_TITLES:
             self.assertIn(f"## {title}", preview)
 

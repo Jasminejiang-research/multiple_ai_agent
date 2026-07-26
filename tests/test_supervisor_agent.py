@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import unittest
 
 from pydantic import ValidationError
@@ -95,18 +94,6 @@ class FakeSupervisorLLM:
         return self.response
 
 
-class SequenceSupervisorLLM:
-    """Return responses in order so one validation retry can be tested."""
-
-    def __init__(self, responses: list[str]) -> None:
-        self.responses = responses
-        self.prompts: list[str] = []
-
-    def generate_json(self, prompt: str) -> str:
-        self.prompts.append(prompt)
-        return self.responses[len(self.prompts) - 1]
-
-
 class SupervisorAgentTests(unittest.TestCase):
     """Tests for Supervisor prompt construction and validated routing output."""
 
@@ -135,24 +122,6 @@ class SupervisorAgentTests(unittest.TestCase):
         self.assertEqual(plan.selected_agents, ["research", "strategy", "finance", "writer", "critic"])
         self.assertEqual(plan.tasks[-1].agent_role, "critic")
         self.assertEqual([event.event_type for event in events], ["started", "completed"])
-
-    def test_supervisor_retries_once_with_validation_error_feedback(self) -> None:
-        """An invalid first response receives one schema-guided correction attempt."""
-        invalid_plan = json.loads(_supervisor_plan_json())
-        invalid_plan["tasks"][3]["input_requirements"] = [
-            f"Required writer input {index}" for index in range(1, 10)
-        ]
-        llm = SequenceSupervisorLLM(
-            [json.dumps(invalid_plan), _supervisor_plan_json()]
-        )
-
-        plan = SupervisorAgent(llm_client=llm).run(_complete_brief())
-
-        self.assertIsInstance(plan, SupervisorPlan)
-        self.assertEqual(len(llm.prompts), 2)
-        self.assertIn("# Validation Correction", llm.prompts[1])
-        self.assertIn("input_requirements", llm.prompts[1])
-        self.assertIn("do not silently truncate", llm.prompts[1])
 
     def test_supervisor_plan_rejects_research_conclusion_fields(self) -> None:
         """Supervisor output should not carry direct analysis conclusions."""

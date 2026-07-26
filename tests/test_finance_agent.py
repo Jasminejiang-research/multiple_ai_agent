@@ -110,6 +110,7 @@ class FinanceAgentTests(unittest.TestCase):
         self.assertIn("break_even_discussion", prompt)
         self.assertIn("not forecasts", prompt)
         self.assertIn("Do not write a full business proposal", prompt)
+        self.assertIn("`needs_human_review`; keep the list to at most 8 items", prompt)
 
     def test_finance_agent_calls_mock_llm_and_returns_assumptions(self) -> None:
         """The Finance Agent parses fake LLM JSON into validated assumptions."""

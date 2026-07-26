@@ -11,7 +11,7 @@ from agents.critic import CriticAgent, CriticLLM
 from agents.finance import FinanceAgent, FinanceLLM
 from agents.research import ResearchAgent, ResearchLLM
 from agents.strategy import StrategyAgent, StrategyLLM
-from agents.supervisor import SupervisorAgent, SupervisorLLM
+from agents.supervisor import SupervisorLLM
 from agents.writer import WriterAgent, WriterLLM
 from rag.index import VectorIndex
 from rag.knowledge_base import (
@@ -89,7 +89,9 @@ def build_multi_agent_workflow_graph(
     Every agent runs once in a deterministic order. Before writing, the graph
     retrieves section-relevant knowledge-base evidence with source metadata.
     """
-    supervisor = SupervisorAgent(llm_client=supervisor_llm)
+    # The controlled workflow has five fixed roles. Keep the optional argument
+    # for API compatibility, but deliberately spend no LLM request on routing.
+    _ = supervisor_llm
     research = ResearchAgent(
         llm_client=research_llm,
         web_search_tool=web_search_tool,
@@ -133,8 +135,8 @@ def build_multi_agent_workflow_graph(
         "supervisor",
         _logged_agent_node(
             step_name="supervisor",
-            node=lambda state: supervisor_agent_node(state, agent=supervisor),
-            agent_name=supervisor.name,
+            node=supervisor_agent_node,
+            agent_name="Supervisor Agent",
             output_type="SupervisorPlan",
             output_field="supervisor_plan",
             session_factory=logging_session_factory,

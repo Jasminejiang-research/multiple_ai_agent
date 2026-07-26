@@ -3,22 +3,27 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
 
+import requests
 from pydantic import ValidationError
 
 from agents.base import AgentLogHook, BaseAgent
 from schemas.agent_outputs import ResearchAnalysis
 from schemas.source import SourceRecord, WebSearchResult
+from tools.tavily_search import WebSearchProviderError
 from tools.web_search import search_web
 from workflow.llm_client import StructuredJsonLLM, create_default_llm_client
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 RESEARCH_PROMPT_PATH = ROOT_DIR / "prompts" / "research_agent.md"
+logger = logging.getLogger(__name__)
 
 
 class ResearchLLM(Protocol):
@@ -32,6 +37,16 @@ WebSearchTool = Callable[
     [str, list[str] | None, str | None, int],
     list[WebSearchResult],
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class WebResearchWarning:
+    """One recoverable provider failure from a controlled research query."""
+
+    agent_name: str
+    query: str
+    error_type: str
+    message: str
 
 
 def create_default_research_llm() -> ResearchLLM:
@@ -51,6 +66,7 @@ def load_research_prompt() -> str:
 def build_research_prompt(
     user_brief: dict[str, Any],
     web_sources: list[SourceRecord] | None = None,
+    web_search_warnings: list[WebResearchWarning] | None = None,
 ) -> str:
     """Build the complete prompt sent to the Research Agent LLM call.
 
@@ -69,13 +85,22 @@ def build_research_prompt(
         ensure_ascii=False,
         indent=2,
     )
+    warnings_json = json.dumps(
+        [asdict(warning) for warning in (web_search_warnings or [])],
+        ensure_ascii=False,
+        indent=2,
+    )
 
     return (
         f"{load_research_prompt()}\n\n"
         "# User Brief JSON\n\n"
         f"```json\n{brief_json}\n```\n\n"
         "# Controlled Web Research Sources JSON\n\n"
-        f"```json\n{sources_json}\n```"
+        f"```json\n{sources_json}\n```\n\n"
+        "# Web Research Degradation Warnings JSON\n\n"
+        "Treat a failed search scope as unavailable evidence. Do not infer or "
+        "invent the missing results.\n\n"
+        f"```json\n{warnings_json}\n```"
     )
 
 
@@ -117,6 +142,12 @@ class ResearchAgent(BaseAgent):
         )
         self._llm_client = llm_client
         self._web_search_tool = web_search_tool
+        self._web_search_warnings: list[WebResearchWarning] = []
+
+    @property
+    def web_search_warnings(self) -> tuple[WebResearchWarning, ...]:
+        """Return provider warnings from the most recent collection attempt."""
+        return tuple(self._web_search_warnings)
 
     @staticmethod
     def _market_query(user_brief: dict[str, Any]) -> str:
@@ -155,14 +186,45 @@ class ResearchAgent(BaseAgent):
         self,
         user_brief: dict[str, Any],
     ) -> list[SourceRecord]:
-        """Run only the approved market and competitor web-search scopes."""
+        """Run approved searches independently and retain any partial evidence.
+
+        Only expected external-provider failures are degraded. Invalid result
+        schemas and programming errors deliberately remain visible to callers.
+        """
         search_requests = (
             ("Market Research Agent", self._market_query(user_brief)),
             ("Competitor Agent", self._competitor_query(user_brief)),
         )
         sources: list[SourceRecord] = []
+        self._web_search_warnings = []
         for agent_name, query in search_requests:
-            results = self._web_search_tool(query, None, "last_12_months", 5)
+            try:
+                results = self._web_search_tool(
+                    query,
+                    None,
+                    "last_12_months",
+                    5,
+                )
+            except (WebSearchProviderError, requests.Timeout, TimeoutError) as exc:
+                warning = WebResearchWarning(
+                    agent_name=agent_name,
+                    query=query,
+                    error_type=type(exc).__name__,
+                    message=str(exc) or "Controlled web research failed.",
+                )
+                self._web_search_warnings.append(warning)
+                logger.warning(
+                    "Controlled web research degraded for %s: %s",
+                    agent_name,
+                    warning.message,
+                    extra={
+                        "web_research_agent": agent_name,
+                        "web_search_query": query,
+                        "web_search_error_type": warning.error_type,
+                    },
+                )
+                continue
+
             retrieved_at = datetime.now(timezone.utc)
             for result in results:
                 normalized_result = WebSearchResult.model_validate(result)
@@ -198,6 +260,10 @@ class ResearchAgent(BaseAgent):
             if key != "web_research_sources"
         }
         llm_client = self._llm_client or create_default_research_llm()
-        prompt = build_research_prompt(prompt_brief, web_sources)
+        prompt = build_research_prompt(
+            prompt_brief,
+            web_sources,
+            list(self.web_search_warnings),
+        )
         raw_output = llm_client.generate_json(prompt)
         return parse_research_analysis(raw_output)

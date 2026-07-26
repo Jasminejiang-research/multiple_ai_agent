@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import unittest
 from datetime import datetime, timezone
 
@@ -179,16 +178,19 @@ class FakeWriterLLM:
         return self.response
 
 
-class SequenceWriterLLM:
-    """Return responses in order so one validation retry can be tested."""
+class ValidatorAwareWriterLLM(FakeWriterLLM):
+    """Exercise Writer's shared schema-plus-citation retry boundary."""
 
-    def __init__(self, responses: list[str]) -> None:
-        self.responses = responses
-        self.prompts: list[str] = []
+    def __init__(self, response: str) -> None:
+        super().__init__(response)
+        self.validator_calls = 0
 
-    def generate_json(self, prompt: str) -> str:
+    def generate_json_validated(self, prompt: str, output_validator: object) -> str:
         self.prompts.append(prompt)
-        return self.responses[len(self.prompts) - 1]
+        self.validator_calls += 1
+        assert callable(output_validator)
+        output_validator(ProposalDraft.model_validate_json(self.response))
+        return self.response
 
 
 class WriterAgentTests(unittest.TestCase):
@@ -235,6 +237,15 @@ class WriterAgentTests(unittest.TestCase):
         self.assertEqual(proposal.market_opportunity.source_ids, [])
         self.assertEqual([event.event_type for event in events], ["started", "completed"])
 
+    def test_writer_uses_dynamic_source_and_citation_validator(self) -> None:
+        llm = ValidatorAwareWriterLLM(_proposal_json())
+
+        proposal = WriterAgent(llm_client=llm).run(_writer_input())
+
+        self.assertIsInstance(proposal, ProposalDraft)
+        self.assertEqual(llm.validator_calls, 1)
+        self.assertEqual(len(llm.prompts), 1)
+
     def test_writer_rejects_missing_analysis_packet(self) -> None:
         """The Writer requires research, strategy, and finance packets."""
         invalid_input = _writer_input().model_dump()
@@ -274,24 +285,48 @@ class WriterAgentTests(unittest.TestCase):
 
         self.assertIn("web-market-research", proposal.global_source_ids)
 
-    def test_writer_retries_once_with_validation_error_feedback(self) -> None:
-        """An invalid first draft receives one schema-guided correction attempt."""
-        invalid_proposal = json.loads(_proposal_json())
-        invalid_proposal["appendix"]["key_claims"] = [
-            f"Appendix claim {index}" for index in range(1, 10)
-        ]
-        llm = SequenceWriterLLM(
-            [json.dumps(invalid_proposal), _proposal_json()]
+    def test_writer_supports_web_only_mode_and_marks_unsupported_sections_low(
+        self,
+    ) -> None:
+        """Missing RAG evidence degrades safely instead of stopping the run."""
+        input_payload = _writer_input().model_dump()
+        input_payload["evidence_chunks"] = []
+        writer_input = WriterInput.model_validate(input_payload)
+        proposal_payload = ProposalDraft.model_validate_json(
+            _proposal_json()
+        ).model_dump()
+        for field_name in PROPOSAL_SECTION_FIELD_NAMES:
+            section = proposal_payload[field_name]
+            section["source_ids"] = []
+            section["content"] = section["content"].replace(
+                " [framework-unit-economics]",
+                "",
+            )
+            for claim in section["key_claims"]:
+                claim["text"] = claim["text"].replace(
+                    " [framework-unit-economics]",
+                    "",
+                )
+                claim["content_anchor"] = claim["content_anchor"].replace(
+                    " [framework-unit-economics]",
+                    "",
+                )
+                claim["source_ids"] = []
+        llm = FakeWriterLLM(
+            ProposalDraft.model_validate(proposal_payload).model_dump_json()
         )
 
-        proposal = WriterAgent(llm_client=llm).run(_writer_input())
+        proposal = WriterAgent(llm_client=llm).run(writer_input)
 
-        self.assertIsInstance(proposal, ProposalDraft)
-        self.assertEqual(len(llm.prompts), 2)
-        self.assertIn("# Validation Correction", llm.prompts[1])
-        self.assertIn("appendix.key_claims", llm.prompts[1])
-        self.assertIn("do not silently truncate", llm.prompts[1])
-
+        self.assertEqual(writer_input.evidence_mode, "web_only")
+        self.assertTrue(writer_input.low_confidence_required)
+        self.assertTrue(
+            all(
+                getattr(proposal, field_name).confidence == "low"
+                for field_name in PROPOSAL_SECTION_FIELD_NAMES
+            )
+        )
+        self.assertIn('"evidence_mode": "web_only"', llm.prompts[0])
 
 if __name__ == "__main__":
     unittest.main()

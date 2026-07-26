@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 PROPOSAL_SECTION_TITLES: tuple[str, ...] = (
@@ -22,6 +23,8 @@ PROPOSAL_SECTION_TITLES: tuple[str, ...] = (
     "Implementation Roadmap",
     "Appendix",
 )
+CRITIQUE_MAX_ISSUES = 12
+CRITIQUE_MAX_MUST_FIX = 8
 
 PROPOSAL_SECTION_FIELD_NAMES: tuple[str, ...] = (
     "executive_summary",
@@ -42,6 +45,119 @@ PROPOSAL_SECTION_FIELD_NAMES: tuple[str, ...] = (
 SECTION_FIELD_BY_TITLE: dict[str, str] = dict(
     zip(PROPOSAL_SECTION_TITLES, PROPOSAL_SECTION_FIELD_NAMES, strict=True)
 )
+
+ClaimType = Literal[
+    "market_size",
+    "competitor",
+    "trend",
+    "financial_benchmark",
+    "customer",
+    "product",
+    "operational",
+    "regulatory",
+    "general",
+]
+EvidenceStatus = Literal[
+    "sourced_fact",
+    "assumption",
+    "unsupported",
+    "needs_validation",
+]
+ProposalSectionFieldName = Literal[
+    "executive_summary",
+    "problem",
+    "target_customer",
+    "market_opportunity",
+    "solution",
+    "value_proposition",
+    "competitor_analysis",
+    "business_model",
+    "go_to_market_strategy",
+    "financial_assumptions",
+    "risks_and_mitigations",
+    "implementation_roadmap",
+    "appendix",
+]
+
+
+class StructuredClaim(BaseModel):
+    """One auditable proposal claim and its evidence disposition."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    text: Annotated[
+        str,
+        Field(min_length=1, description="The exact claim text shown to reviewers."),
+    ]
+    claim_type: Annotated[
+        ClaimType,
+        Field(description="Semantic claim category used by citation policy."),
+    ]
+    evidence_status: Annotated[
+        EvidenceStatus,
+        Field(
+            description=(
+                "Whether the claim is sourced fact, an assumption, unsupported, "
+                "or awaiting validation."
+            )
+        ),
+    ]
+    source_ids: Annotated[
+        list[str],
+        Field(
+            max_length=8,
+            description="Exact source IDs that directly support this claim.",
+        ),
+    ]
+    content_anchor: Annotated[
+        str,
+        Field(
+            min_length=1,
+            description=(
+                "Exact prose excerpt used to locate the claim in section content."
+            ),
+        ),
+    ]
+
+    @model_validator(mode="after")
+    def normalize_evidence_metadata(self) -> "StructuredClaim":
+        """Deduplicate IDs and provide a useful anchor for legacy claim strings."""
+        self.source_ids = list(dict.fromkeys(self.source_ids))
+        return self
+
+    def __str__(self) -> str:
+        """Preserve readable formatting in legacy string-oriented renderers."""
+        return self.text
+
+
+def _normalize_structured_claim_inputs(value: object) -> object:
+    """Convert legacy ``list[str]`` claim payloads to structured objects."""
+    if value is None:
+        return []
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise TypeError("key_claims must be a sequence of strings or claim objects.")
+
+    normalized: list[object] = []
+    for item in value:
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                normalized.append(
+                    {
+                        "text": text,
+                        "claim_type": "general",
+                        "evidence_status": "assumption",
+                        "source_ids": [],
+                        "content_anchor": text,
+                    }
+                )
+        elif isinstance(item, (StructuredClaim, Mapping)):
+            normalized.append(item)
+        else:
+            raise TypeError(
+                "key_claims must contain only strings, mappings, or StructuredClaim objects."
+            )
+    return normalized
 
 
 class ProposalOutlineSection(BaseModel):
@@ -180,11 +296,11 @@ class SectionDraft(BaseModel):
         ),
     ]
     key_claims: Annotated[
-        list[str],
+        list[StructuredClaim],
         Field(
             default_factory=list,
             max_length=8,
-            description="Important claims made in the draft for later review.",
+            description="Structured claims made in the draft for later review.",
         ),
     ]
     source_ids: Annotated[
@@ -199,6 +315,27 @@ class SectionDraft(BaseModel):
         Literal["high", "medium", "low"],
         Field(description="Confidence level for this draft section."),
     ] = "medium"
+
+    @field_validator("key_claims", mode="before")
+    @classmethod
+    def accept_legacy_key_claims(cls, value: object) -> object:
+        """Accept legacy strings while always storing structured claims."""
+        return _normalize_structured_claim_inputs(value)
+
+    @model_validator(mode="after")
+    def align_claim_evidence(self) -> "SectionDraft":
+        """Propagate claim sources and downgrade sections with evidence gaps."""
+        source_ids = list(self.source_ids)
+        for claim in self.key_claims:
+            for source_id in claim.source_ids:
+                if source_id not in source_ids:
+                    source_ids.append(source_id)
+        self.source_ids = source_ids
+        if any(
+            claim.evidence_status != "sourced_fact" for claim in self.key_claims
+        ):
+            self.confidence = "low"
+        return self
 
 
 class SectionDrafts(BaseModel):
@@ -268,11 +405,11 @@ class ProposalSection(BaseModel):
         Field(min_length=40, description="Validated prose for this proposal section."),
     ]
     key_claims: Annotated[
-        list[str],
+        list[StructuredClaim],
         Field(
             default_factory=list,
             max_length=8,
-            description="Important claims carried forward for critique.",
+            description="Structured claims carried forward for critique.",
         ),
     ]
     source_ids: Annotated[
@@ -287,6 +424,27 @@ class ProposalSection(BaseModel):
         Literal["high", "medium", "low"],
         Field(description="Confidence level for this assembled section."),
     ] = "medium"
+
+    @field_validator("key_claims", mode="before")
+    @classmethod
+    def accept_legacy_key_claims(cls, value: object) -> object:
+        """Accept legacy strings while always storing structured claims."""
+        return _normalize_structured_claim_inputs(value)
+
+    @model_validator(mode="after")
+    def align_claim_evidence(self) -> "ProposalSection":
+        """Propagate claim sources and downgrade sections with evidence gaps."""
+        source_ids = list(self.source_ids)
+        for claim in self.key_claims:
+            for source_id in claim.source_ids:
+                if source_id not in source_ids:
+                    source_ids.append(source_id)
+        self.source_ids = source_ids
+        if any(
+            claim.evidence_status != "sourced_fact" for claim in self.key_claims
+        ):
+            self.confidence = "low"
+        return self
 
 
 class ProposalDraft(BaseModel):
@@ -400,6 +558,7 @@ class CritiqueReport(BaseModel):
         list[CritiqueIssue],
         Field(
             default_factory=list,
+            max_length=CRITIQUE_MAX_ISSUES,
             description="Specific issues found; empty means no problems detected.",
         ),
     ]
@@ -407,6 +566,7 @@ class CritiqueReport(BaseModel):
         list[str],
         Field(
             default_factory=list,
+            max_length=CRITIQUE_MAX_MUST_FIX,
             description="Blocking issues that must be resolved before export.",
         ),
     ]
@@ -439,3 +599,45 @@ class RevisedProposal(BaseModel):
             description="Critique items that could not be resolved without new evidence.",
         ),
     ]
+
+
+class RevisedSectionPatch(BaseModel):
+    """Replacement for one failed section of an otherwise valid revision."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    section: ProposalSectionFieldName
+    replacement: ProposalSection
+
+    @model_validator(mode="after")
+    def ensure_title_matches_field(self) -> "RevisedSectionPatch":
+        expected_title = dict(
+            zip(
+                PROPOSAL_SECTION_FIELD_NAMES,
+                PROPOSAL_SECTION_TITLES,
+                strict=True,
+            )
+        )[self.section]
+        if self.replacement.title != expected_title:
+            raise ValueError(
+                f"Patch for {self.section} must retain title {expected_title!r}."
+            )
+        return self
+
+
+class RevisedProposalPatch(BaseModel):
+    """Second-call payload containing only sections that failed validation."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    sections: Annotated[
+        list[RevisedSectionPatch],
+        Field(min_length=1, max_length=13),
+    ]
+
+    @model_validator(mode="after")
+    def ensure_unique_sections(self) -> "RevisedProposalPatch":
+        section_names = [patch.section for patch in self.sections]
+        if len(section_names) != len(set(section_names)):
+            raise ValueError("RevisedProposalPatch.sections must be unique.")
+        return self
