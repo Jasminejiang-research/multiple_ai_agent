@@ -11,6 +11,7 @@ from pydantic import BaseModel
 import workflow.llm_client as shared_llm_client
 from workflow.llm_client import (
     PromptBudgetExceededError,
+    StructuredOutputValidationError,
     capture_llm_usage,
 )
 from workflow.run_budget import run_budget
@@ -50,6 +51,21 @@ class FakeOpenAI:
         self.chat = SimpleNamespace(completions=self.completions)
 
 
+def _response(content: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=content),
+            )
+        ],
+        usage=SimpleNamespace(
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        ),
+    )
+
+
 def _config(
     *,
     structured_mode: str = "json_schema",
@@ -78,9 +94,10 @@ def _client_with_outcomes(
     monkeypatch.setattr(
         client_module.openai,
         "OpenAI",
-        lambda **_kwargs: fake_openai,
+        lambda **_kwargs: object(),
     )
     client = SLMClient(_config(**config_overrides))
+    client._client = fake_openai
     return client, fake_openai.completions
 
 
@@ -225,6 +242,103 @@ def test_non_transient_error_is_not_retried(monkeypatch) -> None:
         client._generate_once("answer", ExampleOutput)
 
     assert len(completions.calls) == 1
+
+
+def test_first_validation_failure_gets_one_correction_then_succeeds(
+    monkeypatch,
+) -> None:
+    client, completions = _client_with_outcomes(
+        monkeypatch,
+        [
+            _response("{}"),
+            _response('{"answer": "corrected"}'),
+        ],
+    )
+
+    with capture_llm_usage() as usage:
+        result = client.generate_structured("Give one answer.", ExampleOutput)
+
+    assert result == ExampleOutput(answer="corrected")
+    assert len(completions.calls) == 2
+    correction_prompt = completions.calls[1]["messages"][-1]["content"]
+    assert "# Structured Output Correction" in correction_prompt
+    assert "This is the only correction attempt." in correction_prompt
+    assert usage.request_count == 2
+    assert usage.retry_count == 1
+    assert usage.prompt_tokens == 20
+    assert usage.output_tokens == 10
+    assert usage.total_tokens == 30
+    assert usage.approximate_cost == 0.0
+
+
+def test_two_validation_failures_raise_after_exactly_two_calls(
+    monkeypatch,
+) -> None:
+    client, completions = _client_with_outcomes(
+        monkeypatch,
+        [_response("{}"), _response("{}")],
+    )
+
+    with pytest.raises(StructuredOutputValidationError):
+        client.generate_structured("Give one answer.", ExampleOutput)
+
+    assert len(completions.calls) == 2
+
+
+def test_json_code_fence_and_surrounding_text_are_parsed(monkeypatch) -> None:
+    client, completions = _client_with_outcomes(
+        monkeypatch,
+        [
+            _response(
+                "Here is the result:\n"
+                "```json\n"
+                '{"answer": "inside fence"}\n'
+                "```\n"
+                "Done."
+            )
+        ],
+    )
+
+    result = client.generate_structured_once(
+        "Give one answer.",
+        ExampleOutput,
+    )
+
+    assert result == ExampleOutput(answer="inside fence")
+    assert len(completions.calls) == 1
+
+
+def test_usage_tokens_aggregate_and_decrement_run_budget(monkeypatch) -> None:
+    client, completions = _client_with_outcomes(
+        monkeypatch,
+        [_response('{"answer": "accounted"}')],
+    )
+
+    with capture_llm_usage() as usage, run_budget(
+        max_requests=2,
+        max_total_tokens=1_000,
+    ) as budget:
+        result = client.generate_structured_once(
+            "Give one answer.",
+            ExampleOutput,
+        )
+        budget_snapshot = budget.snapshot()
+
+    assert result == ExampleOutput(answer="accounted")
+    assert len(completions.calls) == 1
+    assert usage.request_count == 1
+    assert usage.retry_count == 0
+    assert usage.prompt_tokens == 10
+    assert usage.output_tokens == 5
+    assert usage.total_tokens == 15
+    assert usage.approximate_cost == 0.0
+    assert budget_snapshot["request_count"] == 1
+    assert budget_snapshot["retry_count"] == 0
+    assert budget_snapshot["prompt_tokens"] == 10
+    assert budget_snapshot["output_tokens"] == 5
+    assert budget_snapshot["total_tokens"] == 15
+    assert budget_snapshot["remaining_requests"] == 1
+    assert budget_snapshot["remaining_tokens"] == 985
 
 
 def test_shared_usage_tracker_private_contract() -> None:
