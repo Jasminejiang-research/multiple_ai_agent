@@ -35,7 +35,7 @@ def test_load_slm_config_uses_documented_defaults() -> None:
         base_url="http://localhost:11434/v1",
         model_name="qwen2.5:3b",
         api_key="ollama",
-        structured_mode="json_schema",
+        structured_mode="json_object",
         max_prompt_chars=60_000,
         max_output_tokens=8_192,
         run_max_requests=12,
