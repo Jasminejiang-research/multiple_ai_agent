@@ -50,6 +50,7 @@ from slm.preflight_slm import SLMPreflightResult, check_slm_preflight
 
 BASELINE_WORKFLOW_VERSION = "single-agent-baseline-v1"
 BASELINE_PROMPT_VERSION = "phase1-single-agent-prompt-v1"
+SLM_MULTI_AGENT_RAG_TOP_K = 1
 
 
 def _require_ready(preflight: SLMPreflightResult) -> SLMPreflightResult:
@@ -219,6 +220,7 @@ def run_slm_multi_agent(user_brief: dict[str, str]) -> WorkflowPipelineResult:
         "writer_llm": adapters["writer"],
         "critic_llm": adapters["critic"],
         "revision_llm": adapters["revision"],
+        "rag_top_k": SLM_MULTI_AGENT_RAG_TOP_K,
         "logging_session_factory": get_session,
     }
     if not preflight.tavily_available:

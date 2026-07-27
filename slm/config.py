@@ -21,6 +21,13 @@ DEFAULT_REQUEST_TIMEOUT = 300
 
 _SLM_ENV_PATH = Path(__file__).resolve().with_name(".env.slm")
 _SUPPORTED_STRUCTURED_MODES = frozenset({"json_object", "json_schema"})
+SLM_FORCE_JSON_OBJECT_SCHEMAS = frozenset(
+    {
+        "SectionDrafts",
+        "ProposalDraft",
+        "RevisedProposal",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)

@@ -26,7 +26,7 @@ except ModuleNotFoundError as exc:
 
     openai = _MissingOpenAI()
 
-from slm.config import SLMConfig
+from slm.config import SLMConfig, SLM_FORCE_JSON_OBJECT_SCHEMAS
 from workflow.gemini_schema import relaxed_response_schema
 from workflow.llm_client import (
     PromptBudgetExceededError,
@@ -79,7 +79,12 @@ class SLMClient:
     ) -> tuple[str, dict[str, Any]]:
         """Build the provider prompt and response format for the selected mode."""
         response_schema = relaxed_response_schema(schema)
-        if self._structured_mode == "json_schema":
+        structured_mode = (
+            "json_object"
+            if schema.__name__ in SLM_FORCE_JSON_OBJECT_SCHEMAS
+            else self._structured_mode
+        )
+        if structured_mode == "json_schema":
             return (
                 prompt,
                 {
@@ -90,7 +95,7 @@ class SLMClient:
                     },
                 },
             )
-        if self._structured_mode == "json_object":
+        if structured_mode == "json_object":
             schema_text = json.dumps(response_schema)
             return (
                 f"{prompt}\n\n"

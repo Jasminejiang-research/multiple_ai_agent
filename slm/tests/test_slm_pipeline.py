@@ -237,6 +237,7 @@ def test_multi_agent_injects_every_active_adapter_and_no_web_fallback(
         "critic_llm": adapters["critic"],
         "revision_llm": adapters["revision"],
     }
+    assert captured["builder_kwargs"]["rag_top_k"] == 1
     with pytest.raises(WebSearchConfigurationError):
         captured["builder_kwargs"]["web_search_tool"]("query", None, None, 3)
     assert result.markdown == "# multi"

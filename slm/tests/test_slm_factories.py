@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
+from pydantic import BaseModel
 
 import slm.factories as factories_module
 from schemas.agent_outputs import (
@@ -12,13 +15,14 @@ from schemas.agent_outputs import (
 )
 from schemas.workflow import (
     CritiqueReport,
+    PROPOSAL_SECTION_TITLES,
     ProposalDraft,
     ProposalOutline,
     RevisedProposal,
     SectionDrafts,
 )
 from slm.config import SLMConfig
-from slm.factories import build_slm_adapters
+from slm.factories import ChunkedSectionAdapter, SECTION_BATCHES, build_slm_adapters
 from workflow.llm_client import StructuredJsonLLM
 
 
@@ -77,6 +81,7 @@ def test_build_slm_adapters_covers_all_injection_points(
 ) -> None:
     assert set(adapters) == set(EXPECTED_ADAPTERS)
     assert all(isinstance(adapter, StructuredJsonLLM) for adapter in adapters.values())
+    assert isinstance(adapters["section_writer"], ChunkedSectionAdapter)
 
 
 @pytest.mark.parametrize(
@@ -96,3 +101,130 @@ def test_build_slm_adapters_matches_existing_defaults(
 
     assert adapter._schema is expected_schema
     assert adapter._temperature == expected_temperature
+
+
+class _AlternativeOutput(BaseModel):
+    value: str
+
+
+class _FakeStructuredClient:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def _generate(
+        self,
+        method: str,
+        prompt: str,
+        schema: type[BaseModel],
+        **kwargs: Any,
+    ) -> BaseModel:
+        batch_index = len(
+            [
+                call
+                for call in self.calls
+                if call["schema"] is factories_module._SectionDraftBatch
+            ]
+        )
+        self.calls.append(
+            {
+                "method": method,
+                "prompt": prompt,
+                "schema": schema,
+                **kwargs,
+            }
+        )
+        if schema is factories_module._SectionDraftBatch:
+            titles = SECTION_BATCHES[batch_index]
+            result = schema.model_validate(
+                {
+                    "proposal_title": "AI Education Proposal",
+                    "sections": [
+                        {
+                            "title": title,
+                            "content": (
+                                f"{title} content grounded in the supplied "
+                                "brief and proposal outline for validation."
+                            ),
+                            "key_claims": [],
+                            "source_ids": [],
+                            "confidence": "medium",
+                        }
+                        for title in titles
+                    ],
+                    "writing_notes": [f"batch {batch_index + 1} note"],
+                }
+            )
+        else:
+            result = schema.model_validate({"value": "ok"})
+
+        output_validator = kwargs.get("output_validator")
+        if output_validator is not None:
+            output_validator(result)
+        return result
+
+    def generate_structured(
+        self,
+        prompt: str,
+        schema: type[BaseModel],
+        **kwargs: Any,
+    ) -> BaseModel:
+        return self._generate("corrected", prompt, schema, **kwargs)
+
+    def generate_structured_once(
+        self,
+        prompt: str,
+        schema: type[BaseModel],
+        **kwargs: Any,
+    ) -> BaseModel:
+        return self._generate("once", prompt, schema, **kwargs)
+
+
+def test_chunked_section_adapter_merges_three_validated_batches() -> None:
+    client = _FakeStructuredClient()
+    adapter = ChunkedSectionAdapter(client)  # type: ignore[arg-type]
+
+    result = SectionDrafts.model_validate_json(adapter.generate_json("base prompt"))
+
+    assert tuple(section.title for section in result.sections) == (
+        PROPOSAL_SECTION_TITLES
+    )
+    assert result.writing_notes == [
+        "batch 1 note",
+        "batch 2 note",
+        "batch 3 note",
+    ]
+    assert [call["method"] for call in client.calls] == ["corrected"] * 3
+    assert all(
+        "# SLM Chunked Section Generation" in call["prompt"]
+        for call in client.calls
+    )
+    assert "batch 1 of 3" in client.calls[0]["prompt"]
+    assert "Use this exact proposal_title" in client.calls[1]["prompt"]
+
+
+def test_chunked_section_adapter_supports_all_structured_adapter_methods() -> None:
+    client = _FakeStructuredClient()
+    adapter = ChunkedSectionAdapter(client)  # type: ignore[arg-type]
+    validated: list[BaseModel] = []
+
+    validated_result = adapter.generate_json_validated(
+        "validated prompt",
+        validated.append,
+    )
+    assert SectionDrafts.model_validate_json(validated_result)
+    assert len(validated) == 1
+
+    client.calls.clear()
+    once_result = adapter.generate_json_once("one shot prompt")
+    assert SectionDrafts.model_validate_json(once_result)
+    assert [call["method"] for call in client.calls] == ["once"] * 3
+
+    client.calls.clear()
+    alternate_result = adapter.generate_json_for_schema_once(
+        "alternate prompt",
+        _AlternativeOutput,
+    )
+    assert _AlternativeOutput.model_validate_json(alternate_result).value == "ok"
+    assert len(client.calls) == 1
+    assert client.calls[0]["method"] == "once"
+    assert client.calls[0]["schema"] is _AlternativeOutput

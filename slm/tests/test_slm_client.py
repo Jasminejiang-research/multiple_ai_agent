@@ -18,7 +18,8 @@ from workflow.run_budget import run_budget
 
 import slm.client as client_module
 from slm.client import SLMClient
-from slm.config import SLMConfig
+from slm.config import SLMConfig, SLM_FORCE_JSON_OBJECT_SCHEMAS
+from schemas.workflow import ProposalDraft, RevisedProposal, SectionDrafts
 from workflow.gemini_schema import relaxed_response_schema
 
 
@@ -176,6 +177,30 @@ def test_json_object_mode_appends_schema_to_user_prompt(monkeypatch) -> None:
         "# Output JSON Schema (must match exactly)\n\n"
     )
     assert '"answer"' in request_prompt
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [SectionDrafts, ProposalDraft, RevisedProposal],
+)
+def test_large_schemas_force_json_object_mode(
+    monkeypatch,
+    schema: type[BaseModel],
+) -> None:
+    client, completions = _client_with_outcomes(
+        monkeypatch,
+        [object()],
+        structured_mode="json_schema",
+    )
+
+    client._generate_once("Generate the proposal.", schema)
+
+    call = completions.calls[0]
+    assert schema.__name__ in SLM_FORCE_JSON_OBJECT_SCHEMAS
+    assert call["response_format"] == {"type": "json_object"}
+    assert "# Output JSON Schema (must match exactly)" in (
+        call["messages"][0]["content"]
+    )
 
 
 def test_prompt_budget_is_checked_before_reservation_or_api_call(
