@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from typing import Any, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 try:
     import openai
@@ -32,6 +33,7 @@ from workflow.llm_client import (
     StructuredOutputValidationError,
     _ACTIVE_USAGE_TRACKER,
     _provider_status_code,
+    _validation_feedback,
     schema_cardinality_contract,
 )
 from workflow.run_budget import (
@@ -153,3 +155,172 @@ class SLMClient:
                 raise
 
         raise RuntimeError("SLM request did not produce a response.")
+
+    @staticmethod
+    def _extract_json_text(text: str) -> str:
+        """Remove code fences and prose surrounding one JSON object."""
+        stripped_text = text.strip()
+        object_start = stripped_text.find("{")
+        object_end = stripped_text.rfind("}")
+        if object_start != -1 and object_end >= object_start:
+            return stripped_text[object_start : object_end + 1]
+        return stripped_text
+
+    def _record_response_usage(self, response: Any) -> None:
+        """Add OpenAI-compatible usage metadata to shared accounting."""
+        usage = getattr(response, "usage", None)
+        prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+        output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+        total_tokens = int(
+            getattr(
+                usage,
+                "total_tokens",
+                prompt_tokens + output_tokens,
+            )
+            or prompt_tokens + output_tokens
+        )
+
+        tracker = _ACTIVE_USAGE_TRACKER.get()
+        if tracker is not None:
+            tracker.prompt_tokens += prompt_tokens
+            tracker.output_tokens += output_tokens
+            tracker.total_tokens += total_tokens
+            # Local SLM inference has no metered provider cost.
+            tracker.approximate_cost += 0.0
+
+        record_run_usage(
+            prompt_tokens=prompt_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+        )
+
+    def _validate_response(
+        self,
+        response: Any,
+        schema: type[ModelT],
+        *,
+        output_validator: Callable[[ModelT], None] | None,
+    ) -> ModelT:
+        """Record usage, extract JSON, and apply strict output validation."""
+        self._record_response_usage(response)
+
+        try:
+            content = response.choices[0].message.content
+        except (AttributeError, IndexError, TypeError):
+            content = None
+        if not isinstance(content, str) or not content.strip():
+            raise StructuredOutputValidationError(
+                f"SLM returned an empty response for {schema.__name__}."
+            )
+
+        json_text = self._extract_json_text(content)
+        try:
+            result = schema.model_validate_json(json_text)
+        except (ValidationError, ValueError) as exc:
+            raise StructuredOutputValidationError(
+                f"Invalid {schema.__name__} output: {exc}"
+            ) from exc
+
+        if output_validator is not None:
+            try:
+                output_validator(result)
+            except ValueError as exc:
+                raise StructuredOutputValidationError(
+                    f"Invalid {schema.__name__} output: {exc}"
+                ) from exc
+        return result
+
+    def _generate_validated_once(
+        self,
+        prompt: str,
+        schema: type[ModelT],
+        *,
+        temperature: float,
+        system_instruction: str | None,
+        output_validator: Callable[[ModelT], None] | None,
+    ) -> ModelT:
+        """Make one request and validate its OpenAI-compatible response."""
+        response = self._generate_once(
+            prompt,
+            schema,
+            temperature=temperature,
+            system_instruction=system_instruction,
+        )
+        return self._validate_response(
+            response,
+            schema,
+            output_validator=output_validator,
+        )
+
+    @staticmethod
+    def _constrained_prompt(
+        prompt: str,
+        schema: type[BaseModel],
+    ) -> str:
+        """Append Pydantic-derived list limits to one model prompt."""
+        cardinality_contract = schema_cardinality_contract(schema)
+        return (
+            f"{prompt}\n\n{cardinality_contract}"
+            if cardinality_contract
+            else prompt
+        )
+
+    def generate_structured(
+        self,
+        prompt: str,
+        schema: type[ModelT],
+        *,
+        temperature: float = 0.2,
+        system_instruction: str | None = None,
+        output_validator: Callable[[ModelT], None] | None = None,
+    ) -> ModelT:
+        """Generate strictly validated output with one correction attempt."""
+        constrained_prompt = self._constrained_prompt(prompt, schema)
+        try:
+            return self._generate_validated_once(
+                constrained_prompt,
+                schema,
+                temperature=temperature,
+                system_instruction=system_instruction,
+                output_validator=output_validator,
+            )
+        except StructuredOutputValidationError as exc:
+            tracker = _ACTIVE_USAGE_TRACKER.get()
+            if tracker is not None:
+                tracker.retry_count += 1
+            record_run_retry()
+            feedback = _validation_feedback(exc)
+            correction_prompt = (
+                f"{constrained_prompt}\n\n"
+                "# Structured Output Correction\n\n"
+                f"The previous {schema.__name__} output failed strict validation:\n"
+                f"{feedback}\n\n"
+                "This is the only correction attempt. Return the complete corrected "
+                "JSON object only. Merge duplicate or closely related list entries "
+                "to satisfy the generated limits; do not silently truncate them."
+            )
+            return self._generate_validated_once(
+                correction_prompt,
+                schema,
+                temperature=temperature,
+                system_instruction=system_instruction,
+                output_validator=output_validator,
+            )
+
+    def generate_structured_once(
+        self,
+        prompt: str,
+        schema: type[ModelT],
+        *,
+        temperature: float = 0.2,
+        system_instruction: str | None = None,
+        output_validator: Callable[[ModelT], None] | None = None,
+    ) -> ModelT:
+        """Generate and validate exactly once, without schema correction."""
+        return self._generate_validated_once(
+            self._constrained_prompt(prompt, schema),
+            schema,
+            temperature=temperature,
+            system_instruction=system_instruction,
+            output_validator=output_validator,
+        )
