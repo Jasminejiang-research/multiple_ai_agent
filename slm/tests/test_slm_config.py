@@ -1,0 +1,141 @@
+"""Tests for the isolated SLM configuration loader."""
+
+from __future__ import annotations
+
+from dataclasses import FrozenInstanceError
+
+import pytest
+
+import slm.config as config_module
+from slm.config import SLMConfig, load_slm_config
+
+
+SLM_VARIABLES = (
+    "SLM_BASE_URL",
+    "SLM_MODEL_NAME",
+    "SLM_API_KEY",
+    "SLM_STRUCTURED_MODE",
+    "SLM_MAX_PROMPT_CHARS",
+    "SLM_MAX_OUTPUT_TOKENS",
+    "SLM_RUN_MAX_REQUESTS",
+    "SLM_RUN_MAX_TOTAL_TOKENS",
+    "SLM_REQUEST_TIMEOUT",
+)
+
+
+@pytest.fixture(autouse=True)
+def isolated_slm_environment(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    for variable_name in SLM_VARIABLES:
+        monkeypatch.delenv(variable_name, raising=False)
+    monkeypatch.setattr(config_module, "_SLM_ENV_PATH", tmp_path / ".env.slm")
+
+
+def test_load_slm_config_uses_documented_defaults() -> None:
+    assert load_slm_config() == SLMConfig(
+        base_url="http://localhost:11434/v1",
+        model_name="qwen2.5:3b",
+        api_key="ollama",
+        structured_mode="json_schema",
+        max_prompt_chars=60_000,
+        max_output_tokens=8_192,
+        run_max_requests=12,
+        run_max_total_tokens=160_000,
+        request_timeout=300,
+    )
+
+
+def test_slm_config_is_frozen() -> None:
+    loaded_config = load_slm_config()
+
+    with pytest.raises(FrozenInstanceError):
+        loaded_config.model_name = "another-model"  # type: ignore[misc]
+
+
+def test_load_slm_config_uses_process_environment_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    overrides = {
+        "SLM_BASE_URL": "http://localhost:8000/v1",
+        "SLM_MODEL_NAME": "Qwen/Qwen2.5-3B-Instruct",
+        "SLM_API_KEY": "test-key",
+        "SLM_STRUCTURED_MODE": "json_object",
+        "SLM_MAX_PROMPT_CHARS": "50000",
+        "SLM_MAX_OUTPUT_TOKENS": "4096",
+        "SLM_RUN_MAX_REQUESTS": "20",
+        "SLM_RUN_MAX_TOTAL_TOKENS": "200000",
+        "SLM_REQUEST_TIMEOUT": "120",
+    }
+    for variable_name, value in overrides.items():
+        monkeypatch.setenv(variable_name, value)
+
+    loaded_config = load_slm_config()
+
+    assert loaded_config == SLMConfig(
+        base_url="http://localhost:8000/v1",
+        model_name="Qwen/Qwen2.5-3B-Instruct",
+        api_key="test-key",
+        structured_mode="json_object",
+        max_prompt_chars=50_000,
+        max_output_tokens=4_096,
+        run_max_requests=20,
+        run_max_total_tokens=200_000,
+        request_timeout=120,
+    )
+
+
+def test_dotenv_values_take_precedence_over_process_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    env_path = tmp_path / ".env.slm"
+    env_path.write_text(
+        "SLM_MODEL_NAME=model-from-file\nSLM_RUN_MAX_REQUESTS=7\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_module, "_SLM_ENV_PATH", env_path)
+    monkeypatch.setenv("SLM_MODEL_NAME", "model-from-process")
+    monkeypatch.setenv("SLM_RUN_MAX_REQUESTS", "99")
+
+    loaded_config = load_slm_config()
+
+    assert loaded_config.model_name == "model-from-file"
+    assert loaded_config.run_max_requests == 7
+
+
+@pytest.mark.parametrize(
+    ("variable_name", "invalid_value"),
+    [
+        ("SLM_MAX_PROMPT_CHARS", "0"),
+        ("SLM_MAX_OUTPUT_TOKENS", "-1"),
+        ("SLM_RUN_MAX_REQUESTS", "1.5"),
+        ("SLM_RUN_MAX_TOTAL_TOKENS", "many"),
+        ("SLM_REQUEST_TIMEOUT", ""),
+    ],
+)
+def test_load_slm_config_rejects_invalid_positive_integers(
+    monkeypatch: pytest.MonkeyPatch,
+    variable_name: str,
+    invalid_value: str,
+) -> None:
+    monkeypatch.setenv(variable_name, invalid_value)
+
+    with pytest.raises(ValueError, match=variable_name):
+        load_slm_config()
+
+
+def test_load_slm_config_rejects_empty_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SLM_BASE_URL", "  ")
+
+    with pytest.raises(ValueError, match="SLM_BASE_URL"):
+        load_slm_config()
+
+
+def test_load_slm_config_rejects_unknown_structured_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SLM_STRUCTURED_MODE", "xml")
+
+    with pytest.raises(ValueError, match="SLM_STRUCTURED_MODE"):
+        load_slm_config()
