@@ -2,6 +2,12 @@
 
 # SLM 实验
 
+## 上游私有依赖
+
+`slm.client` 直接依赖 `workflow.llm_client._ACTIVE_USAGE_TRACKER`，以便 SLM
+请求继续写入现有 `capture_llm_usage()` 上下文。若上游重命名该私有名称，此处
+必须同步更新；`slm/tests/test_slm_client.py` 的契约测试会立即报告这种漂移。
+
 ## 验证记录
 
 ### S1.2 结构化输出能力验证（2026-07-26）
