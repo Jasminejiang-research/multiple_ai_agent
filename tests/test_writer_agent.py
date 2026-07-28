@@ -18,7 +18,9 @@ from schemas.workflow import (
     PROPOSAL_SECTION_FIELD_NAMES,
     PROPOSAL_SECTION_TITLES,
     ProposalDraft,
+    RevisedProposalPatch,
 )
+from workflow.llm_client import StructuredOutputValidationError
 
 
 def _writer_input() -> WriterInput:
@@ -193,6 +195,37 @@ class ValidatorAwareWriterLLM(FakeWriterLLM):
         return self.response
 
 
+class BatchedWriterLLM:
+    """Return the requested subset of one complete valid proposal."""
+
+    def __init__(self, response: str) -> None:
+        self.proposal = ProposalDraft.model_validate_json(response)
+        self.calls: list[tuple[str, type]] = []
+
+    def generate_json_for_schema(
+        self,
+        prompt: str,
+        schema: type,
+        output_validator: object | None = None,
+    ) -> str:
+        self.calls.append((prompt, schema))
+        if schema is RevisedProposalPatch:
+            raise StructuredOutputValidationError(
+                "Citation patch remained invalid after correction."
+            )
+        proposal_payload = self.proposal.model_dump()
+        batch = schema.model_validate(
+            {
+                field_name: proposal_payload[field_name]
+                for field_name in schema.model_fields
+            }
+        )
+        if output_validator is not None:
+            assert callable(output_validator)
+            output_validator(batch)
+        return batch.model_dump_json()
+
+
 class WriterAgentTests(unittest.TestCase):
     """Tests for Writer input validation, prompt boundaries, and output parsing."""
 
@@ -245,6 +278,71 @@ class WriterAgentTests(unittest.TestCase):
         self.assertIsInstance(proposal, ProposalDraft)
         self.assertEqual(llm.validator_calls, 1)
         self.assertEqual(len(llm.prompts), 1)
+
+    def test_writer_uses_four_generation_batches_when_supported(self) -> None:
+        llm = BatchedWriterLLM(_proposal_json())
+
+        proposal = WriterAgent(llm_client=llm).run(_writer_input())
+
+        self.assertIsInstance(proposal, ProposalDraft)
+        self.assertEqual(len(llm.calls), 4)
+        self.assertEqual(
+            [schema.__name__ for _, schema in llm.calls],
+            [
+                "ProposalDraftBatch1",
+                "ProposalDraftBatch2",
+                "ProposalDraftBatch3",
+                "ProposalDraftBatch4",
+            ],
+        )
+        self.assertTrue(
+            all(
+                "Authoritative Section Batch Override" in prompt
+                for prompt, _ in llm.calls
+            )
+        )
+        self.assertEqual(
+            proposal.global_source_ids,
+            ["framework-unit-economics"],
+        )
+
+    def test_writer_safely_downgrades_after_failed_citation_patch(self) -> None:
+        proposal_payload = ProposalDraft.model_validate_json(
+            _proposal_json()
+        ).model_dump()
+        proposal_payload["problem"].update(
+            content=(
+                "The supplied research describes a customer problem but the "
+                "sentence omits its exact inline marker."
+            ),
+            key_claims=[
+                {
+                    "text": "The supplied research describes a customer problem.",
+                    "claim_type": "customer",
+                    "evidence_status": "sourced_fact",
+                    "source_ids": ["web-market-research"],
+                    "content_anchor": (
+                        "The supplied research describes a customer problem."
+                    ),
+                }
+            ],
+            source_ids=["web-market-research"],
+            confidence="high",
+        )
+        llm = BatchedWriterLLM(
+            ProposalDraft.model_validate(proposal_payload).model_dump_json()
+        )
+
+        proposal = WriterAgent(llm_client=llm).run(_writer_input())
+
+        self.assertEqual(len(llm.calls), 5)
+        self.assertIs(llm.calls[-1][1], RevisedProposalPatch)
+        self.assertEqual(
+            proposal.problem.key_claims[0].evidence_status,
+            "needs_validation",
+        )
+        self.assertEqual(proposal.problem.key_claims[0].source_ids, [])
+        self.assertEqual(proposal.problem.confidence, "low")
 
     def test_writer_rejects_missing_analysis_packet(self) -> None:
         """The Writer requires research, strategy, and finance packets."""

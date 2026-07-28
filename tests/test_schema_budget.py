@@ -16,17 +16,19 @@ from schemas.agent_outputs import (
 from schemas.proposal_schema import BusinessProposal
 from schemas.workflow import (
     CritiqueReport,
-    ProposalDraft,
     ProposalOutline,
-    RevisedProposal,
     RevisedProposalPatch,
     SectionDrafts,
 )
+from workflow.generation_batches import (
+    PROPOSAL_DRAFT_BATCH_MODELS,
+    REVISED_PROPOSAL_BATCH_MODELS,
+)
 from workflow.gemini_schema import relaxed_response_schema
 
-# Initial conservative budget from Phase 5 T2. After the live acceptance test
-# in T3, replace this with 1.5 times the largest schema accepted by Gemini.
-MAX_GENERATION_SCHEMA_CHARS = 15_000
+# T3 accepted every complete schema on 2026-07-28. The largest production
+# schema was RevisedProposalBatch1 at 2,745 chars; 4,200 is > 1.5x that value.
+MAX_GENERATION_SCHEMA_CHARS = 4_200
 
 # Every schema passed to LLMClient.generate_structured* in production.
 # SupervisorPlan is intentionally absent: supervisor_agent_node constructs it
@@ -36,12 +38,12 @@ GENERATION_SCHEMAS = (
     ProposalOutline,
     SectionDrafts,
     CritiqueReport,
-    RevisedProposal,
     RevisedProposalPatch,
-    ProposalDraft,
     ResearchAnalysis,
     StrategyAnalysis,
     FinanceAssumptions,
+    *PROPOSAL_DRAFT_BATCH_MODELS,
+    *REVISED_PROPOSAL_BATCH_MODELS,
 )
 
 

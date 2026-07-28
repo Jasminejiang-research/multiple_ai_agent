@@ -40,6 +40,11 @@ from schemas.workflow import (
     RevisedProposalPatch,
     SectionDrafts,
 )
+from workflow.generation_batches import (
+    PROPOSAL_SECTION_BATCHES,
+    REVISED_PROPOSAL_BATCH_MODELS,
+    merge_revised_proposal_batches,
+)
 from workflow.llm_client import StructuredOutputValidationError
 from workflow.state import WorkflowState
 
@@ -790,6 +795,90 @@ def build_revision_patch_prompt(
     )
 
 
+def build_revision_batch_prompt(
+    prompt: str,
+    *,
+    batch_number: int,
+    section_fields: tuple[str, ...],
+    schema_name: str,
+    include_title: bool,
+) -> str:
+    """Append the authoritative generation-only shape for one revision batch."""
+    metadata_instruction = (
+        "Also return `applied_critique_summary` and `unresolved_issues`."
+        if batch_number == 1
+        else "Do not return revision summary metadata; batch 1 owns it."
+    )
+    top_level_fields = (
+        f"`title` and exactly these section fields: {', '.join(section_fields)}"
+        if include_title
+        else f"exactly these section fields: {', '.join(section_fields)}"
+    )
+    return (
+        f"{prompt}\n\n"
+        "# Authoritative Revision Batch Override\n\n"
+        f"This is batch {batch_number} of {len(PROPOSAL_SECTION_BATCHES)}. "
+        "Revise only the sections assigned to this batch. This instruction "
+        "overrides earlier output-shape text that requests a complete nested "
+        "`RevisedProposal`; the complete object is assembled deterministically "
+        "after all batches validate.\n\n"
+        f"Return one flat `{schema_name}` JSON object with {top_level_fields}. "
+        f"{metadata_instruction} Do not return a `proposal` wrapper or any "
+        "section assigned to another batch."
+    )
+
+
+def _generate_revised_proposal_batches(
+    llm_client: RevisionLLM,
+    prompt: str,
+) -> RevisedProposal:
+    """Generate four small revision batches with one correction per failed batch."""
+    generate_for_schema = getattr(
+        llm_client,
+        "generate_json_for_schema_once",
+        None,
+    )
+    if not callable(generate_for_schema):
+        raise TypeError("Revision LLM does not support generation-only batch schemas.")
+
+    batch_outputs = []
+    for batch_number, (section_fields, batch_model) in enumerate(
+        zip(
+            PROPOSAL_SECTION_BATCHES,
+            REVISED_PROPOSAL_BATCH_MODELS,
+            strict=True,
+        ),
+        start=1,
+    ):
+        batch_prompt = build_revision_batch_prompt(
+            prompt,
+            batch_number=batch_number,
+            section_fields=section_fields,
+            schema_name=batch_model.__name__,
+            include_title="title" in batch_model.model_fields,
+        )
+        try:
+            raw_batch = generate_for_schema(batch_prompt, batch_model)
+            batch = batch_model.model_validate_json(raw_batch)
+        except (StructuredOutputValidationError, ValueError) as first_error:
+            correction_prompt = (
+                f"{batch_prompt}\n\n"
+                "# Final Batch Correction\n\n"
+                f"The first {batch_model.__name__} output failed strict "
+                f"validation:\n{str(first_error)[:4_000]}\n\n"
+                "Return the complete corrected batch JSON only. This is the "
+                "second and final call for this batch."
+            )
+            corrected_raw_batch = generate_for_schema(
+                correction_prompt,
+                batch_model,
+            )
+            batch = batch_model.model_validate_json(corrected_raw_batch)
+        batch_outputs.append(batch)
+
+    return merge_revised_proposal_batches(batch_outputs)
+
+
 def _generate_revision_once(
     llm_client: RevisionLLM,
     prompt: str,
@@ -921,68 +1010,63 @@ def revision_node(
         sorted(allowed_source_ids),
         evidence_mapping,
     )
-    try:
-        first_raw_output = _generate_revision_once(
-            llm_client,
-            prompt,
-            RevisedProposal,
-        )
-        revised_proposal = parse_revised_proposal(first_raw_output)
-    except (StructuredOutputValidationError, ValueError) as first_error:
-        correction_prompt = (
-            f"{prompt}\n\n"
-            "# Final Full-Output Correction\n\n"
-            "The first RevisedProposal failed strict schema validation:\n"
-            f"{str(first_error)[:4_000]}\n\n"
-            "Return the complete corrected RevisedProposal JSON only. This is "
-            "the second and final Revision call."
-        )
+    batch_generator = getattr(
+        llm_client,
+        "generate_json_for_schema_once",
+        None,
+    )
+    if callable(batch_generator):
         try:
-            corrected_raw_output = _generate_revision_once(
+            revised_proposal = _generate_revised_proposal_batches(
                 llm_client,
-                correction_prompt,
-                RevisedProposal,
+                prompt,
             )
-            revised_proposal = parse_revised_proposal(corrected_raw_output)
-        except Exception as second_error:
+        except Exception as batch_error:
             return _citation_review_result(
                 original_proposal,
                 base_revision=None,
                 failures=[],
                 reason=(
-                    "The final full-output schema correction failed: "
-                    f"{second_error}"
+                    "The batched revision generation failed: "
+                    f"{batch_error}"
                 ),
                 state=state,
             )
-
-        _apply_revision_confidence_floor(revised_proposal, state)
-        failures_after_second_call = collect_proposal_citation_failures(
-            revised_proposal.proposal,
-            allowed_source_ids=allowed_source_ids,
-        )
-        if failures_after_second_call:
-            return _citation_review_result(
-                revised_proposal.proposal,
-                base_revision=revised_proposal,
-                failures=failures_after_second_call,
-                reason=(
-                    "Citation validation still failed after the final "
-                    "full-output correction."
-                ),
-                state=state,
+    else:
+        try:
+            first_raw_output = _generate_revision_once(
+                llm_client,
+                prompt,
+                RevisedProposal,
             )
-        return {
-            "revised_proposal": revised_proposal.model_dump(),
-            "citation_failures": [],
-            "needs_citation_review": False,
-            "revision_checkpoint": {
-                "run_id": state.get("run_id"),
-                "replay_step": "revision",
-                "checkpoint_source": "persisted_revision_input",
-            },
-            "current_step": "revision",
-        }
+            revised_proposal = parse_revised_proposal(first_raw_output)
+        except (StructuredOutputValidationError, ValueError) as first_error:
+            correction_prompt = (
+                f"{prompt}\n\n"
+                "# Final Full-Output Correction\n\n"
+                "The first RevisedProposal failed strict schema validation:\n"
+                f"{str(first_error)[:4_000]}\n\n"
+                "Return the complete corrected RevisedProposal JSON only. This is "
+                "the second and final Revision call."
+            )
+            try:
+                corrected_raw_output = _generate_revision_once(
+                    llm_client,
+                    correction_prompt,
+                    RevisedProposal,
+                )
+                revised_proposal = parse_revised_proposal(corrected_raw_output)
+            except Exception as second_error:
+                return _citation_review_result(
+                    original_proposal,
+                    base_revision=None,
+                    failures=[],
+                    reason=(
+                        "The final full-output schema correction failed: "
+                        f"{second_error}"
+                    ),
+                    state=state,
+                )
 
     _apply_revision_confidence_floor(revised_proposal, state)
     failures = collect_proposal_citation_failures(

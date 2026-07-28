@@ -131,6 +131,33 @@ class SequenceRevisionLLM:
         return self.responses[len(self.prompts) - 1]
 
 
+class BatchedRevisionLLM:
+    """Return the requested subset of one complete valid revision."""
+
+    def __init__(self, response: str) -> None:
+        self.revision = RevisedProposal.model_validate_json(response)
+        self.calls: list[tuple[str, type]] = []
+
+    def generate_json_for_schema_once(self, prompt: str, schema: type) -> str:
+        self.calls.append((prompt, schema))
+        proposal_payload = self.revision.proposal.model_dump()
+        payload = {
+            field_name: proposal_payload[field_name]
+            for field_name in schema.model_fields
+            if field_name in proposal_payload
+        }
+        for metadata_field in (
+            "applied_critique_summary",
+            "unresolved_issues",
+        ):
+            if metadata_field in schema.model_fields:
+                payload[metadata_field] = getattr(
+                    self.revision,
+                    metadata_field,
+                )
+        return schema.model_validate(payload).model_dump_json()
+
+
 class RevisionNodeTests(unittest.TestCase):
     """Tests for prompt construction and revision state updates."""
 
@@ -177,6 +204,35 @@ class RevisionNodeTests(unittest.TestCase):
             "low",
         )
         self.assertEqual(len(result["revised_proposal"]["unresolved_issues"]), 1)
+
+    def test_revision_uses_four_generation_batches_when_supported(self) -> None:
+        llm = BatchedRevisionLLM(_revised_proposal_json())
+
+        result = revision_node(
+            {
+                "proposal_draft": _proposal_draft_dict(),
+                "critique_report": _critique_report_dict(),
+            },
+            llm_client=llm,
+        )
+
+        self.assertEqual(len(llm.calls), 4)
+        self.assertEqual(
+            [schema.__name__ for _, schema in llm.calls],
+            [
+                "RevisedProposalBatch1",
+                "RevisedProposalBatch2",
+                "RevisedProposalBatch3",
+                "RevisedProposalBatch4",
+            ],
+        )
+        self.assertTrue(
+            all(
+                "Authoritative Revision Batch Override" in prompt
+                for prompt, _ in llm.calls
+            )
+        )
+        self.assertFalse(result["needs_citation_review"])
 
     def test_revision_rejects_source_id_outside_complete_allowlist(self) -> None:
         """A revised proposal cannot invent a source absent from RAG/Web/draft."""

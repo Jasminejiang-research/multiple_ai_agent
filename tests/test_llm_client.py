@@ -141,6 +141,24 @@ class LLMClientTests(unittest.TestCase):
         self.assertIn("lacks exact inline [source-id] citation", correction_prompt)
         self.assertIn("only correction attempt", correction_prompt)
 
+    def test_dynamic_schema_generation_uses_central_correction_loop(self) -> None:
+        """Writer batches use the requested schema and one shared correction."""
+        client = _client(
+            [
+                _response({"items": ["one", "two", "three"]}),
+                _response({"items": ["one"]}),
+            ]
+        )
+        adapter = StructuredJsonLLM(client, BaseModel)
+
+        result = adapter.generate_json_for_schema(
+            "Return the requested batch.",
+            LimitedOutput,
+        )
+
+        self.assertEqual(LimitedOutput.model_validate_json(result).items, ["one"])
+        self.assertEqual(len(client._client.models.calls), 2)  # type: ignore[attr-defined]
+
     def test_persistent_semantic_failure_stops_after_two_calls(self) -> None:
         """Repeated source/citation failure never causes a third request."""
         client = _client(

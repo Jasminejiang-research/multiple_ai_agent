@@ -618,6 +618,21 @@ class StructuredJsonLLM:
         )
         return result.model_dump_json()
 
+    def generate_json_for_schema(
+        self,
+        prompt: str,
+        schema: type[BaseModel],
+        output_validator: Callable[[BaseModel], None] | None = None,
+    ) -> str:
+        """Return a validated result for a generation-only batch schema."""
+        result = self._client.generate_structured(
+            prompt,
+            schema,
+            temperature=self._temperature,
+            output_validator=output_validator,
+        )
+        return result.model_dump_json()
+
 
 def create_default_llm_client() -> LLMClient:
     """Create the production ``LLMClient`` from environment configuration."""
