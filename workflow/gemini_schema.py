@@ -1,16 +1,16 @@
-"""Build constraint-light JSON schemas for Gemini structured output.
+"""Build structure-only JSON schemas for Gemini structured output.
 
 Gemini compiles ``response_schema`` into a constrained-decoding state machine
-with a hard cap on the number of states it will serve. Length, pattern, item
-count, and numeric-bound constraints multiply that state count and trigger a
-``400 INVALID_ARGUMENT`` ("schema produces a constraint that has too many
-states for serving") for our nested 13-section workflow schemas.
+with a hard cap on the number of states it will serve. Constraints, annotations,
+and enums multiply that state count and trigger a ``400 INVALID_ARGUMENT``
+("schema produces a constraint that has too many states for serving") for our
+nested 13-section workflow schemas.
 
 The fix is to decouple the *generation* schema from the *validation* schema:
-we send Gemini a structurally identical but constraint-stripped schema so the
-grammar stays small, then validate the returned JSON against the strict
-Pydantic model as usual. Strict Pydantic validation is preserved; only the
-decoding-time constraints are dropped.
+the generation schema retains only structure (``type``, ``properties``,
+``required``, ``items``, and structural composition), while annotations and
+enums are stripped. Semantic constraints are carried by both the prompt
+contract and strict local Pydantic validation.
 """
 
 from __future__ import annotations
@@ -43,22 +43,18 @@ _CONSTRAINT_KEYS: frozenset[str] = frozenset(
     }
 )
 
-# A large enum (many members, or long member names) is the dominant "too many
-# states for serving" trigger, especially when the same enum is repeated across
-# many nested objects (e.g. the 13-value section ``title`` in every section).
-# When an enum crosses either threshold we drop it from the *generation* schema
-# and keep the plain type; the prompt already lists the allowed values and the
-# strict Pydantic model still validates them after generation.
-_MAX_ENUM_MEMBERS = 6
-_MAX_ENUM_TOTAL_CHARS = 100
+# Schema annotations add request text and do not constrain the JSON shape.
+# ``title`` and ``description`` may also be *business property names*, so these
+# keys are stripped only at a schema-fragment level. The ``properties`` mapping
+# is handled specially by ``_clean`` to preserve every business field name.
+_ANNOTATION_KEYS: frozenset[str] = frozenset(
+    {"description", "title", "examples", "default", "$comment"}
+)
 
 
 def _is_expensive_enum(values: list[Any]) -> bool:
-    """Return True when an enum is large enough to risk the serving limit."""
-    if len(values) > _MAX_ENUM_MEMBERS:
-        return True
-    total_chars = sum(len(str(value)) for value in values)
-    return total_chars > _MAX_ENUM_TOTAL_CHARS
+    """Return True because every enum inflates Gemini's serving state count."""
+    return True
 
 
 def _infer_enum_type(values: list[Any]) -> str:
@@ -84,22 +80,31 @@ def _clean(node: Any, defs: dict[str, Any]) -> Any:
     """
     if isinstance(node, dict):
         # Resolve a ``$ref`` by inlining its (cleaned) target, then merging any
-        # sibling keywords (e.g. a field-level ``description``) over it.
+        # cleaned sibling structural keywords over it.
         if "$ref" in node:
             ref_name = node["$ref"].split("/")[-1]
             resolved = _clean(defs.get(ref_name, {}), defs)
             if isinstance(resolved, dict):
-                for key, value in node.items():
-                    if key == "$ref" or key in _CONSTRAINT_KEYS or key == "$defs":
-                        continue
-                    resolved.setdefault(key, _clean(value, defs))
+                siblings = _clean(
+                    {key: value for key, value in node.items() if key != "$ref"},
+                    defs,
+                )
+                if isinstance(siblings, dict):
+                    for key, value in siblings.items():
+                        resolved.setdefault(key, value)
             return resolved
 
         cleaned: dict[str, Any] = {}
         for key, value in node.items():
-            if key in _CONSTRAINT_KEYS or key == "$defs":
+            if key in _CONSTRAINT_KEYS or key in _ANNOTATION_KEYS or key == "$defs":
                 continue
-            cleaned[key] = _clean(value, defs)
+            if key == "properties" and isinstance(value, dict):
+                cleaned[key] = {
+                    property_name: _clean(property_schema, defs)
+                    for property_name, property_schema in value.items()
+                }
+            else:
+                cleaned[key] = _clean(value, defs)
 
         # Flatten a single-element ``allOf`` (Pydantic wraps referenced
         # submodels this way); Gemini handles a flat object more reliably.
@@ -109,9 +114,8 @@ def _clean(node: Any, defs: dict[str, Any]) -> Any:
             for key, value in merged.items():
                 cleaned.setdefault(key, value)
 
-        # Collapse expensive enums to their plain type to stay within Gemini's
-        # serving limit. Small enums (e.g. confidence/severity) are kept as
-        # generation hints; strict Pydantic still validates every value.
+        # Collapse every enum to its plain type. Even small enums become state
+        # multipliers when repeated across the nested 13-section schema.
         enum_values = cleaned.get("enum")
         if isinstance(enum_values, list) and _is_expensive_enum(enum_values):
             cleaned.pop("enum")
@@ -126,12 +130,13 @@ def _clean(node: Any, defs: dict[str, Any]) -> Any:
 
 
 def relaxed_response_schema(model: type[BaseModel]) -> dict[str, Any]:
-    """Return a constraint-stripped, ref-inlined schema dict for Gemini.
+    """Return a structure-only, ref-inlined schema dict for Gemini.
 
-    The returned dict keeps the full structure (properties, types, nesting, and
-    enums) of ``model`` but drops the constraint keywords that cause Gemini's
-    "too many states for serving" error. Callers must still validate the model
-    output with ``model.model_validate_json(...)`` to enforce the constraints.
+    The generation schema retains structure (types, properties, required fields,
+    items, and nesting) but drops annotations, enums, and other constraints that
+    cause Gemini's "too many states for serving" error. The prompt contract
+    communicates semantic constraints to the model, and callers must validate
+    output with ``model.model_validate_json(...)`` to enforce them locally.
 
     Args:
         model: The strict Pydantic model describing the desired output.

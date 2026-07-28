@@ -28,8 +28,8 @@ from schemas.workflow import (
     SectionDrafts,
 )
 from workflow.gemini_schema import (
+    _ANNOTATION_KEYS,
     _CONSTRAINT_KEYS,
-    _is_expensive_enum,
     relaxed_response_schema,
 )
 
@@ -59,6 +59,21 @@ def _iter_keys(node: Any):
     elif isinstance(node, list):
         for item in node:
             yield from _iter_keys(item)
+
+
+def _iter_schema_fragment_keys(node: Any):
+    """Yield schema keywords without treating business property names as keys."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            yield key
+            if key == "properties" and isinstance(value, dict):
+                for property_schema in value.values():
+                    yield from _iter_schema_fragment_keys(property_schema)
+            else:
+                yield from _iter_schema_fragment_keys(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _iter_schema_fragment_keys(item)
 
 
 def _iter_enums(node: Any):
@@ -110,17 +125,34 @@ def test_relaxed_schema_preserves_structure(model: type) -> None:
     """Stripping constraints must keep the object shape and its properties."""
     schema = relaxed_response_schema(model)
     assert schema.get("type") == "object"
-    assert schema.get("properties"), f"{model.__name__} lost its properties"
+    properties = schema.get("properties")
+    assert properties, f"{model.__name__} lost its properties"
+    assert set(properties) == set(model.model_json_schema().get("properties", {})), (
+        f"{model.__name__} lost or changed a top-level business property"
+    )
 
 
 @pytest.mark.parametrize("model", WORKFLOW_MODELS)
-def test_relaxed_schema_drops_expensive_enums(model: type) -> None:
-    """No large enum (the main serving-limit trigger) may survive relaxing."""
-    schema = relaxed_response_schema(model)
-    for enum_values in _iter_enums(schema):
-        assert not _is_expensive_enum(enum_values), (
-            f"{model.__name__} kept an expensive enum: {enum_values}"
-        )
+def test_relaxed_schema_drops_all_enums(model: type) -> None:
+    """No enum may survive because even small repeated enums inflate states."""
+    assert not list(_iter_enums(relaxed_response_schema(model))), (
+        f"{model.__name__} leaked an enum into the Gemini schema"
+    )
+
+
+@pytest.mark.parametrize("model", WORKFLOW_MODELS)
+def test_relaxed_schema_drops_all_annotations(model: type) -> None:
+    """Schema annotations add request text without defining JSON structure."""
+    keys = set(_iter_schema_fragment_keys(relaxed_response_schema(model)))
+    offending = keys & _ANNOTATION_KEYS
+    assert not offending, f"{model.__name__} leaked annotations: {sorted(offending)}"
+
+
+def test_relaxed_schema_preserves_title_business_property() -> None:
+    """Annotation stripping must not delete a property whose name is ``title``."""
+    schema = relaxed_response_schema(SectionDrafts)
+    section_schema = schema["properties"]["sections"]["items"]
+    assert "title" in section_schema["properties"]
 
 
 @pytest.mark.live
