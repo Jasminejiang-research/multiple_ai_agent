@@ -6,8 +6,13 @@ import unittest
 from datetime import datetime, timezone
 
 from agents.base import AgentLogEvent
-from agents.writer import WriterAgent, build_writer_prompt
+from agents.writer import (
+    WriterAgent,
+    build_writer_citation_patch_prompt,
+    build_writer_prompt,
+)
 from rag.retriever import EvidenceChunk
+from rag.citation_checker import collect_proposal_citation_failures
 from schemas.agent_outputs import (
     FinanceAssumptions,
     ResearchAnalysis,
@@ -20,7 +25,10 @@ from schemas.workflow import (
     ProposalDraft,
     RevisedProposalPatch,
 )
-from workflow.llm_client import StructuredOutputValidationError
+from workflow.llm_client import (
+    PromptBudgetExceededError,
+    StructuredOutputValidationError,
+)
 
 
 def _writer_input() -> WriterInput:
@@ -166,6 +174,37 @@ def _proposal_json() -> str:
     return ProposalDraft.model_validate(proposal_data).model_dump_json()
 
 
+def _proposal_with_missing_citations(
+    *section_names: str,
+) -> ProposalDraft:
+    """Return a proposal whose selected sections need citation repair."""
+    proposal_payload = ProposalDraft.model_validate_json(
+        _proposal_json()
+    ).model_dump()
+    for section_name in section_names:
+        section = proposal_payload[section_name]
+        section.update(
+            content=(
+                "The supplied research supports this customer claim, but the "
+                "sentence omits its exact inline marker."
+            ),
+            key_claims=[
+                {
+                    "text": "The supplied research supports this customer claim.",
+                    "claim_type": "customer",
+                    "evidence_status": "sourced_fact",
+                    "source_ids": ["web-market-research"],
+                    "content_anchor": (
+                        "The supplied research supports this customer claim."
+                    ),
+                }
+            ],
+            source_ids=["web-market-research"],
+            confidence="high",
+        )
+    return ProposalDraft.model_validate(proposal_payload)
+
+
 class FakeWriterLLM:
     """Mock Writer LLM that records its prompt and returns fixed JSON."""
 
@@ -224,6 +263,68 @@ class BatchedWriterLLM:
             assert callable(output_validator)
             output_validator(batch)
         return batch.model_dump_json()
+
+
+class PromptBudgetBatchedWriterLLM(BatchedWriterLLM):
+    """Simulate a locally rejected citation patch after valid Writer batches."""
+
+    def generate_json_for_schema(
+        self,
+        prompt: str,
+        schema: type,
+        output_validator: object | None = None,
+    ) -> str:
+        if schema is RevisedProposalPatch:
+            self.calls.append((prompt, schema))
+            raise PromptBudgetExceededError("citation patch exceeded prompt budget")
+        return super().generate_json_for_schema(
+            prompt,
+            schema,
+            output_validator,
+        )
+
+
+class RepairingBatchedWriterLLM(BatchedWriterLLM):
+    """Return one safe replacement for each requested failed section."""
+
+    def __init__(self, response: str, patch_sections: list[str]) -> None:
+        super().__init__(response)
+        self.patch_sections = iter(patch_sections)
+
+    def generate_json_for_schema(
+        self,
+        prompt: str,
+        schema: type,
+        output_validator: object | None = None,
+    ) -> str:
+        if schema is not RevisedProposalPatch:
+            return super().generate_json_for_schema(
+                prompt,
+                schema,
+                output_validator,
+            )
+
+        self.calls.append((prompt, schema))
+        section_name = next(self.patch_sections)
+        replacement = getattr(self.proposal, section_name).model_dump()
+        for claim in replacement["key_claims"]:
+            claim["evidence_status"] = "needs_validation"
+            claim["source_ids"] = []
+        replacement["confidence"] = "low"
+        patch = RevisedProposalPatch.model_validate(
+            {
+                "sections": [
+                    {
+                        "section": section_name,
+                        "replacement": replacement,
+                    }
+                ]
+            }
+        )
+        if output_validator is not None:
+            assert callable(output_validator)
+            output_validator(patch)
+        return patch.model_dump_json()
 
 
 class WriterAgentTests(unittest.TestCase):
@@ -307,36 +408,85 @@ class WriterAgentTests(unittest.TestCase):
         )
 
     def test_writer_safely_downgrades_after_failed_citation_patch(self) -> None:
-        proposal_payload = ProposalDraft.model_validate_json(
-            _proposal_json()
-        ).model_dump()
-        proposal_payload["problem"].update(
-            content=(
-                "The supplied research describes a customer problem but the "
-                "sentence omits its exact inline marker."
-            ),
-            key_claims=[
-                {
-                    "text": "The supplied research describes a customer problem.",
-                    "claim_type": "customer",
-                    "evidence_status": "sourced_fact",
-                    "source_ids": ["web-market-research"],
-                    "content_anchor": (
-                        "The supplied research describes a customer problem."
-                    ),
-                }
-            ],
-            source_ids=["web-market-research"],
-            confidence="high",
-        )
         llm = BatchedWriterLLM(
-            ProposalDraft.model_validate(proposal_payload).model_dump_json()
+            _proposal_with_missing_citations("problem").model_dump_json()
         )
 
         proposal = WriterAgent(llm_client=llm).run(_writer_input())
 
         self.assertEqual(len(llm.calls), 5)
         self.assertIs(llm.calls[-1][1], RevisedProposalPatch)
+        self.assertEqual(
+            proposal.problem.key_claims[0].evidence_status,
+            "needs_validation",
+        )
+        self.assertEqual(proposal.problem.key_claims[0].source_ids, [])
+        self.assertEqual(proposal.problem.confidence, "low")
+
+    def test_writer_patch_prompt_excludes_full_writer_input(self) -> None:
+        proposal = _proposal_with_missing_citations("problem")
+        failures = collect_proposal_citation_failures(
+            proposal,
+            allowed_source_ids={
+                "framework-unit-economics",
+                "web-market-research",
+            },
+        )
+
+        prompt = build_writer_citation_patch_prompt(
+            _writer_input(),
+            proposal,
+            failures,
+        )
+
+        self.assertNotIn("# Writer Input JSON", prompt)
+        self.assertNotIn('"research_analysis"', prompt)
+        self.assertNotIn("https://example.com", prompt)
+        self.assertIn('"source_id":"web-market-research"', prompt)
+        self.assertIn("Recent market evidence for AI-assisted education.", prompt)
+        self.assertIn('"problem":', prompt)
+        self.assertNotIn('"solution":', prompt)
+        self.assertLess(len(prompt), 10_000)
+
+    def test_writer_repairs_failed_sections_in_separate_small_patches(self) -> None:
+        generated = _proposal_with_missing_citations(
+            "problem",
+            "solution",
+        )
+        llm = RepairingBatchedWriterLLM(
+            generated.model_dump_json(),
+            ["problem", "solution"],
+        )
+
+        proposal = WriterAgent(llm_client=llm).run(_writer_input())
+
+        patch_prompts = [
+            prompt
+            for prompt, schema in llm.calls
+            if schema is RevisedProposalPatch
+        ]
+        self.assertEqual(len(patch_prompts), 2)
+        self.assertIn('"problem":', patch_prompts[0])
+        self.assertNotIn('"solution":', patch_prompts[0])
+        self.assertIn('"solution":', patch_prompts[1])
+        self.assertNotIn('"problem":', patch_prompts[1])
+        self.assertEqual(
+            proposal.problem.key_claims[0].evidence_status,
+            "needs_validation",
+        )
+        self.assertEqual(
+            proposal.solution.key_claims[0].evidence_status,
+            "needs_validation",
+        )
+
+    def test_writer_prompt_budget_error_downgrades_instead_of_failing(self) -> None:
+        llm = PromptBudgetBatchedWriterLLM(
+            _proposal_with_missing_citations("problem").model_dump_json()
+        )
+
+        proposal = WriterAgent(llm_client=llm).run(_writer_input())
+
+        self.assertEqual(len(llm.calls), 5)
         self.assertEqual(
             proposal.problem.key_claims[0].evidence_status,
             "needs_validation",
