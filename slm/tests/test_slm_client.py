@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import threading
 from types import SimpleNamespace
 from typing import Any
 
@@ -72,6 +74,8 @@ def _config(
     structured_mode: str = "json_schema",
     max_prompt_chars: int = 60_000,
     max_output_tokens: int = 32,
+    input_cost_per_million_tokens: float = 0.0,
+    output_cost_per_million_tokens: float = 0.0,
 ) -> SLMConfig:
     return SLMConfig(
         base_url="http://localhost:11434/v1",
@@ -83,6 +87,8 @@ def _config(
         run_max_requests=12,
         run_max_total_tokens=160_000,
         request_timeout=300,
+        input_cost_per_million_tokens=input_cost_per_million_tokens,
+        output_cost_per_million_tokens=output_cost_per_million_tokens,
     )
 
 
@@ -114,10 +120,14 @@ def test_slm_client_initializes_openai_compatible_sdk(monkeypatch) -> None:
 
     client = SLMClient(_config())
 
+    # ``max_retries=0`` keeps every retry inside this module, where it is
+    # counted against the usage tracker and the run budget. The SDK default of
+    # 2 would silently triple the wall time of a timeout and skip accounting.
     assert captured == {
         "base_url": "http://localhost:11434/v1",
         "api_key": "ollama",
         "timeout": 300,
+        "max_retries": 0,
     }
     assert client._client is sdk_client
     assert client._model_name == "qwen2.5:3b"
@@ -177,6 +187,49 @@ def test_json_object_mode_appends_schema_to_user_prompt(monkeypatch) -> None:
         "# Output JSON Schema (must match exactly)\n\n"
     )
     assert '"answer"' in request_prompt
+
+
+def test_json_object_mode_sends_the_strict_schema_not_the_relaxed_one(
+    monkeypatch,
+) -> None:
+    """Nothing compiles the schema on this path, so constraints must survive.
+
+    The relaxed variant drops enum members above six, which is how the writer
+    came to invent claim_type values it had never been shown.
+    """
+    client, completions = _client_with_outcomes(
+        monkeypatch,
+        [object()],
+        structured_mode="json_object",
+        max_prompt_chars=200_000,
+    )
+
+    client._generate_once("Generate the proposal.", ProposalDraft)
+
+    request_prompt = completions.calls[0]["messages"][0]["content"]
+    schema_text = request_prompt.split(
+        "# Output JSON Schema (must match exactly)\n\n"
+    )[1]
+    assert json.loads(schema_text) == ProposalDraft.model_json_schema()
+    assert json.loads(schema_text) != relaxed_response_schema(ProposalDraft)
+    # The enum the relaxed variant discards must reach the model.
+    assert "market_size" in schema_text
+    assert "market_size" not in json.dumps(relaxed_response_schema(ProposalDraft))
+
+
+def test_json_schema_mode_still_sends_the_relaxed_schema(monkeypatch) -> None:
+    """Constrained decoders keep the relaxation that exists for their sake."""
+    client, completions = _client_with_outcomes(
+        monkeypatch,
+        [object()],
+        structured_mode="json_schema",
+    )
+
+    client._generate_once("Give one answer.", ExampleOutput)
+
+    assert completions.calls[0]["response_format"]["json_schema"]["schema"] == (
+        relaxed_response_schema(ExampleOutput)
+    )
 
 
 @pytest.mark.parametrize(
@@ -364,6 +417,194 @@ def test_usage_tokens_aggregate_and_decrement_run_budget(monkeypatch) -> None:
     assert budget_snapshot["total_tokens"] == 15
     assert budget_snapshot["remaining_requests"] == 1
     assert budget_snapshot["remaining_tokens"] == 985
+
+
+def test_context_window_probe_reports_the_served_window(monkeypatch) -> None:
+    """A truncating server reports its own window, not the probe size."""
+    truncated = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="x"))],
+        usage=SimpleNamespace(
+            prompt_tokens=2_050,
+            completion_tokens=1,
+            total_tokens=2_051,
+        ),
+    )
+    client, completions = _client_with_outcomes(monkeypatch, [truncated])
+
+    with capture_llm_usage() as usage:
+        measured = client.measure_context_window(23_192)
+
+    assert measured == 2_050
+    assert completions.calls == [
+        {
+            "model": "qwen2.5:3b",
+            "messages": [
+                {"role": "user", "content": "token " * 23_192},
+            ],
+            "temperature": 0,
+            "max_tokens": 1,
+        }
+    ]
+    # Preflight runs outside any run; the probe must not pollute accounting.
+    assert usage.request_count == 0
+    assert usage.total_tokens == 0
+
+
+def test_context_window_probe_rejects_a_response_without_usage(
+    monkeypatch,
+) -> None:
+    unusable = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="x"))],
+        usage=None,
+    )
+    client, _ = _client_with_outcomes(monkeypatch, [unusable])
+
+    with pytest.raises(RuntimeError, match="prompt_tokens"):
+        client.measure_context_window(1_000)
+
+
+def test_wall_clock_watchdog_abandons_a_request_the_transport_never_bounds(
+    monkeypatch,
+) -> None:
+    """One observed request ran 10h21m against a 2700s transport timeout."""
+    release = threading.Event()
+
+    class HangingCompletions:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            release.wait(30)
+            return _response('{"answer": "late"}')
+
+    fake = FakeOpenAI([])
+    fake.completions = HangingCompletions()
+    fake.chat = SimpleNamespace(completions=fake.completions)
+    monkeypatch.setattr(
+        client_module.openai,
+        "OpenAI",
+        lambda **_kwargs: object(),
+    )
+    client = SLMClient(_config())
+    client._client = fake
+    client._request_deadline = 0.2
+
+    try:
+        with pytest.raises(client_module.SLMRequestDeadlineExceeded) as failure:
+            client._generate_once("Give one answer.", ExampleOutput)
+    finally:
+        release.set()
+
+    assert "wall-clock deadline" in str(failure.value)
+    assert len(fake.completions.calls) == 1
+
+
+def test_wall_clock_deadline_leaves_the_transport_timeout_first_chance() -> None:
+    """The watchdog is a backstop, so it must fire after the SDK timeout."""
+    assert client_module.WALL_CLOCK_GRACE_MULTIPLIER > 1
+
+
+def test_request_errors_propagate_through_the_watchdog(monkeypatch) -> None:
+    client, _ = _client_with_outcomes(monkeypatch, [ProviderError(401)])
+
+    with pytest.raises(ProviderError):
+        client._generate_once("Give one answer.", ExampleOutput)
+
+
+def test_hosted_endpoint_costs_are_recorded_not_assumed_zero(
+    monkeypatch,
+) -> None:
+    """A hosted arm must not report a cost of zero in every run record."""
+    client, _ = _client_with_outcomes(
+        monkeypatch,
+        [_response('{"answer": "ok"}')],
+        input_cost_per_million_tokens=100.0,
+        output_cost_per_million_tokens=300.0,
+    )
+
+    with capture_llm_usage() as usage:
+        client.generate_structured_once("Give one answer.", ExampleOutput)
+
+    # 10 prompt tokens at 100/M plus 5 output tokens at 300/M.
+    assert usage.approximate_cost == pytest.approx(
+        (10 * 100.0 + 5 * 300.0) / 1_000_000
+    )
+
+
+def test_local_endpoint_defaults_to_zero_cost(monkeypatch) -> None:
+    client, _ = _client_with_outcomes(
+        monkeypatch,
+        [_response('{"answer": "ok"}')],
+    )
+
+    with capture_llm_usage() as usage:
+        client.generate_structured_once("Give one answer.", ExampleOutput)
+
+    assert usage.approximate_cost == 0.0
+
+
+def _truncated_response(content: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=content),
+                finish_reason="length",
+            )
+        ],
+        usage=SimpleNamespace(
+            prompt_tokens=10,
+            completion_tokens=8_192,
+            total_tokens=8_202,
+        ),
+    )
+
+
+def test_truncated_output_is_reported_as_a_length_limit_not_bad_json(
+    monkeypatch,
+) -> None:
+    """A repetition loop hitting max_tokens must not read as a parser error."""
+    client, _ = _client_with_outcomes(
+        monkeypatch,
+        [_truncated_response('{"answer": "aaa ,  ,  ,  ,')],
+    )
+
+    with pytest.raises(StructuredOutputValidationError) as failure:
+        client.generate_structured_once("Give one answer.", ExampleOutput)
+
+    message = str(failure.value)
+    assert "finish_reason='length'" in message
+    assert "32-token limit" in message
+    assert "Invalid JSON" not in message
+
+
+def test_truncation_feedback_reaches_the_correction_request(monkeypatch) -> None:
+    client, completions = _client_with_outcomes(
+        monkeypatch,
+        [
+            _truncated_response('{"answer": "aaa ,  ,'),
+            _response('{"answer": "short"}'),
+        ],
+    )
+
+    result = client.generate_structured("Give one answer.", ExampleOutput)
+
+    assert result == ExampleOutput(answer="short")
+    assert len(completions.calls) == 2
+    correction_prompt = completions.calls[1]["messages"][0]["content"]
+    assert "# Structured Output Correction" in correction_prompt
+    assert "cut off at the" in correction_prompt
+
+
+def test_complete_response_is_unaffected_by_the_length_check(monkeypatch) -> None:
+    complete = _response('{"answer": "ok"}')
+    complete.choices[0].finish_reason = "stop"
+    client, _ = _client_with_outcomes(monkeypatch, [complete])
+
+    assert client.generate_structured_once(
+        "Give one answer.",
+        ExampleOutput,
+    ) == ExampleOutput(answer="ok")
 
 
 def test_shared_usage_tracker_private_contract() -> None:

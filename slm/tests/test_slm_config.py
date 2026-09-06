@@ -7,7 +7,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 import slm.config as config_module
-from slm.config import SLMConfig, load_slm_config
+from slm.config import SLMConfig, load_slm_config, required_context_tokens
 
 
 SLM_VARIABLES = (
@@ -20,6 +20,7 @@ SLM_VARIABLES = (
     "SLM_RUN_MAX_REQUESTS",
     "SLM_RUN_MAX_TOTAL_TOKENS",
     "SLM_REQUEST_TIMEOUT",
+    "SLM_CONTEXT_PROBE",
 )
 
 
@@ -32,16 +33,55 @@ def isolated_slm_environment(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
 
 def test_load_slm_config_uses_documented_defaults() -> None:
     assert load_slm_config() == SLMConfig(
-        base_url="http://localhost:11434/v1",
-        model_name="qwen2.5:3b",
-        api_key="ollama",
+        base_url="https://api.siliconflow.com/v1",
+        model_name="Qwen/Qwen2.5-7B-Instruct",
+        api_key="",
         structured_mode="json_object",
         max_prompt_chars=60_000,
         max_output_tokens=8_192,
         run_max_requests=12,
         run_max_total_tokens=160_000,
-        request_timeout=300,
+        request_timeout=900,
+        context_probe=True,
     )
+
+
+def test_required_context_tokens_covers_prompt_and_output_budgets() -> None:
+    """The guard must demand room for the whole prompt plus the whole output."""
+    required = required_context_tokens(load_slm_config())
+
+    # 60_000 chars / 4.0 chars-per-token + 8_192 output tokens.
+    assert required == 23_192
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [
+        ("1", True),
+        ("true", True),
+        ("ON", True),
+        ("0", False),
+        ("false", False),
+        ("Off", False),
+    ],
+)
+def test_context_probe_flag_accepts_boolean_spellings(
+    monkeypatch: pytest.MonkeyPatch,
+    raw_value: str,
+    expected: bool,
+) -> None:
+    monkeypatch.setenv("SLM_CONTEXT_PROBE", raw_value)
+
+    assert load_slm_config().context_probe is expected
+
+
+def test_context_probe_flag_rejects_non_boolean_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SLM_CONTEXT_PROBE", "maybe")
+
+    with pytest.raises(ValueError, match="SLM_CONTEXT_PROBE"):
+        load_slm_config()
 
 
 def test_slm_config_is_frozen() -> None:
@@ -64,6 +104,7 @@ def test_load_slm_config_uses_process_environment_overrides(
         "SLM_RUN_MAX_REQUESTS": "20",
         "SLM_RUN_MAX_TOTAL_TOKENS": "200000",
         "SLM_REQUEST_TIMEOUT": "120",
+        "SLM_CONTEXT_PROBE": "0",
     }
     for variable_name, value in overrides.items():
         monkeypatch.setenv(variable_name, value)
@@ -80,6 +121,7 @@ def test_load_slm_config_uses_process_environment_overrides(
         run_max_requests=20,
         run_max_total_tokens=200_000,
         request_timeout=120,
+        context_probe=False,
     )
 
 

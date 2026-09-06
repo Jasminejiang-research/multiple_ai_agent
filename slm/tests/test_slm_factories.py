@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 import slm.factories as factories_module
 from schemas.agent_outputs import (
@@ -15,6 +16,7 @@ from schemas.agent_outputs import (
 )
 from schemas.workflow import (
     CritiqueReport,
+    PROPOSAL_SECTION_FIELD_NAMES,
     PROPOSAL_SECTION_TITLES,
     ProposalDraft,
     ProposalOutline,
@@ -22,7 +24,12 @@ from schemas.workflow import (
     SectionDrafts,
 )
 from slm.config import SLMConfig
-from slm.factories import ChunkedSectionAdapter, SECTION_BATCHES, build_slm_adapters
+from slm.factories import (
+    ChunkedProposalAdapter,
+    ChunkedSectionAdapter,
+    SECTION_BATCHES,
+    build_slm_adapters,
+)
 from workflow.llm_client import StructuredJsonLLM
 
 
@@ -103,6 +110,12 @@ def test_build_slm_adapters_matches_existing_defaults(
     assert adapter._temperature == expected_temperature
 
 
+_SECTION_CONTENT = (
+    "Section content long enough to satisfy the strict "
+    "minimum length constraint."
+)
+
+
 class _AlternativeOutput(BaseModel):
     value: str
 
@@ -133,7 +146,23 @@ class _FakeStructuredClient:
                 **kwargs,
             }
         )
-        if schema is factories_module._SectionDraftBatch:
+        if schema.__name__.startswith("ProposalDraftBatch_"):
+            payload: dict[str, Any] = {"title": "AI Education Proposal"}
+            for field_name in schema.model_fields:
+                if field_name == "title":
+                    continue
+                section_title = PROPOSAL_SECTION_TITLES[
+                    PROPOSAL_SECTION_FIELD_NAMES.index(field_name)
+                ]
+                payload[field_name] = {
+                    "title": section_title,
+                    "content": (
+                        f"{section_title} content grounded in the supplied "
+                        "brief and evidence for validation."
+                    ),
+                }
+            result = schema.model_validate(payload)
+        elif schema is factories_module._SectionDraftBatch:
             titles = SECTION_BATCHES[batch_index]
             result = schema.model_validate(
                 {
@@ -228,3 +257,144 @@ def test_chunked_section_adapter_supports_all_structured_adapter_methods() -> No
     assert len(client.calls) == 1
     assert client.calls[0]["method"] == "once"
     assert client.calls[0]["schema"] is _AlternativeOutput
+
+
+def test_chunked_proposal_adapter_merges_three_validated_batches() -> None:
+    client = _FakeStructuredClient()
+    adapter = ChunkedProposalAdapter(client)  # type: ignore[arg-type]
+
+    result = ProposalDraft.model_validate_json(adapter.generate_json("base prompt"))
+
+    assert result.title == "AI Education Proposal"
+    assert tuple(
+        getattr(result, field_name).title
+        for field_name in PROPOSAL_SECTION_FIELD_NAMES
+    ) == PROPOSAL_SECTION_TITLES
+    assert [call["method"] for call in client.calls] == ["corrected"] * 3
+    assert all(
+        "# SLM Chunked Proposal Generation" in call["prompt"]
+        for call in client.calls
+    )
+    assert "batch 1 of 3" in client.calls[0]["prompt"]
+    assert "Use this exact title" in client.calls[1]["prompt"]
+
+
+def test_chunked_proposal_batches_cover_every_section_exactly_once() -> None:
+    covered = [
+        field_name
+        for batch in factories_module.PROPOSAL_FIELD_BATCHES
+        for field_name in batch
+    ]
+
+    assert tuple(covered) == PROPOSAL_SECTION_FIELD_NAMES
+    assert [len(batch) for batch in factories_module.PROPOSAL_FIELD_BATCHES] == [
+        5,
+        4,
+        4,
+    ]
+
+
+def test_chunked_proposal_batch_model_drops_rather_than_rejects_extras() -> None:
+    """Extras must be ignored exactly as ProposalDraft ignores them.
+
+    Forbidding them would invent a failure mode the unchunked path does not
+    have: a 3B model that volunteers a stray key would fail the whole batch.
+    """
+    batch_model = factories_module._proposal_batch_model(
+        factories_module.PROPOSAL_FIELD_BATCHES[0]
+    )
+
+    assert "appendix" not in batch_model.model_fields
+    assert "global_source_ids" not in batch_model.model_fields
+    assert batch_model.model_config.get("extra") == (
+        ProposalDraft.model_config.get("extra")
+    )
+
+    candidate = batch_model.model_validate(
+        {
+            "title": "Proposal",
+            **{
+                field_name: {
+                    "title": PROPOSAL_SECTION_TITLES[index],
+                    "content": _SECTION_CONTENT,
+                }
+                for index, field_name in enumerate(
+                    factories_module.PROPOSAL_FIELD_BATCHES[0]
+                )
+            },
+            # Both observed live: a section from another batch, and a key the
+            # model invented from the batch instruction itself.
+            "appendix": {"title": "Appendix", "content": _SECTION_CONTENT},
+            "required_sections": ["title", "executive_summary"],
+        }
+    )
+
+    dumped = candidate.model_dump()
+    assert "appendix" not in dumped
+    assert "required_sections" not in dumped
+
+
+def test_chunked_proposal_adapter_rejects_a_mismatched_section_title() -> None:
+    field_names = factories_module.PROPOSAL_FIELD_BATCHES[0]
+    validate = ChunkedProposalAdapter._batch_validator(field_names)
+    batch_model = factories_module._proposal_batch_model(field_names)
+    candidate = batch_model.model_validate(
+        {
+            "title": "Proposal",
+            **{
+                field_name: {
+                    "title": PROPOSAL_SECTION_TITLES[index],
+                    "content": _SECTION_CONTENT,
+                }
+                for index, field_name in enumerate(field_names)
+            },
+        }
+    )
+    validate(candidate)  # correct titles pass
+
+    setattr(candidate, "problem", candidate.executive_summary)
+    with pytest.raises(ValueError, match="problem"):
+        validate(candidate)
+
+
+def test_chunked_proposal_adapter_supports_all_structured_adapter_methods() -> None:
+    client = _FakeStructuredClient()
+    adapter = ChunkedProposalAdapter(client)  # type: ignore[arg-type]
+    validated: list[BaseModel] = []
+
+    validated_result = adapter.generate_json_validated(
+        "validated prompt",
+        validated.append,
+    )
+    assert ProposalDraft.model_validate_json(validated_result)
+    assert len(validated) == 1
+
+    client.calls.clear()
+    once_result = adapter.generate_json_once("one shot prompt")
+    assert ProposalDraft.model_validate_json(once_result)
+    assert [call["method"] for call in client.calls] == ["once"] * 3
+
+    client.calls.clear()
+    alternate_result = adapter.generate_json_for_schema_once(
+        "alternate prompt",
+        _AlternativeOutput,
+    )
+    assert _AlternativeOutput.model_validate_json(alternate_result).value == "ok"
+    assert len(client.calls) == 1
+    assert client.calls[0]["schema"] is _AlternativeOutput
+
+
+def test_writer_uses_the_chunked_adapter_only_when_enabled(
+    config: SLMConfig,
+) -> None:
+    default_adapters = build_slm_adapters(config)
+    chunked_adapters = build_slm_adapters(
+        dataclasses.replace(config, chunked_writer=True)
+    )
+
+    assert not isinstance(default_adapters["writer"], ChunkedProposalAdapter)
+    assert default_adapters["writer"]._schema is ProposalDraft
+    assert isinstance(chunked_adapters["writer"], ChunkedProposalAdapter)
+    # The chunked adapter must still declare the schema the Writer node expects.
+    assert chunked_adapters["writer"]._schema is ProposalDraft
+    assert chunked_adapters["writer"]._temperature == 0.2

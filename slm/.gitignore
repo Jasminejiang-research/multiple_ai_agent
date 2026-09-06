@@ -1,2 +1,4 @@
 .env.slm
 !.env.slm.example
+tmp/
+context_window_cache.json
